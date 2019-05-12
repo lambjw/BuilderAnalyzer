@@ -1,0 +1,814 @@
+### Written by vapicuno, 2019/05/12 v3
+### python 3.5, numpy 1.11.1
+### Takes in fin which is in showdown teambuilder format
+### Spits out sets list by gen, builder by gen, stats by gen, and combined builder.  
+### Sorting order is determined by parameters that can be set
+
+import numpy as np
+from itertools import combinations
+import copy
+
+######## PARAMETERS FOR TUNING TO YOUR LIKING ########
+
+fin = 'my_builder.txt'
+
+#### GENERATION PARAMETERS
+## Set to True to evaluate all generations in the builder
+allGenerations = True
+## If not evaluating all generations (above False), list them below
+## in the format ['gen1ou','gen2ou',...,gen'7ou']
+generation = ['gen1ou','gen3ou'] 
+
+#### SETS PARAMETERS (will only affect sets list, not sorted builder)
+## Two sets are considered similar if the EV movement is at most this number
+## ie. 252HP 0Atk and 212HP 40Atk differ by 40EVs
+## set to 0 if not used
+EVthreshold = 40 
+## Two sets are considered similar if the IVs differ by at most this number
+## ie. 31HP and 0HP differ by 31
+## set to 999 if not used
+IVthreshold = 999 
+## Movesets in the sets compendium will be combined on this number of slots where appropriate
+## set to 1 to combine on up to one slot, 2 for up to two slots
+combineMoves = 2 
+### SET AT MOST ONE OF THREE BELOW to True, set all to False to preserve order
+## Least frequent moves come first.  Useful for visualizing differences between sets (recommended)
+sortMovesByAscendingFrequency = True 
+## Most frequent moves come first.  
+sortMovesByDescendingFrequency = False 
+## Moves ordered from A to Z
+sortMovesByAlphabetical = False 
+## Set to True to show shiny status, otherwise False
+showShiny = True
+## Show IVs for most common Hidden Power when HP is a slashed move (may lead to conflicts)
+## set to True to show, False otherwise (False recommended)
+showIVs = False 
+## Set to True to show nicknames, False otherwise
+showNicknames = True
+## Ignore sets of a mon that appear too infrequently (occupy smaller than this fraction of sets)
+## in the format [fraction1, fraction2,...,0]
+## 0 is used as an entry to preserve all sets
+ignoreSetsFraction = [1/8,1/16,1/32,0] 
+## Set to True to show statistics of each set after printing the set, False otherwise
+showStatisticsInSets = True
+
+#### COMBINED BUILDER PARAMETERS
+## Set to True to output a builder
+sortBuilder = True
+## Set to True to sort within teams by Pokemon frequency, otherwise False
+## Leads are preserved for < Gen 5 because of lack of team preview
+sortTeamsByMonFrequency = True
+## Set to True to sort teams within generations by lead, otherwise False
+sortBuilderByLead = True
+### SET AT MOST ONE OF THREE BELOW to True, set all to False to preserve team order within generation
+### can be used with sorting by lead
+## Set to True to sort within generations by team name alphanumeric order
+## ie. "MagBalance" appears on top of "MagOffense"
+sortBuilderByAlphabetical = False
+## Set to True to sort within generations by reverse team name alphanumeric order
+## ie. "MagOffense" appears on top of "MagBalance"
+sortBuilderByReverseAlphabetical = False
+## Set to number of pokemon in core to sort within generations by popularity of Core
+## ie. if = 1, teams with the most popular pokemon come up on top
+## ie. if = 2, and you like using SkarmBliss cores most, then SkarmBliss teams appear on top
+## ie. if = 3, and you like using SkarmBlissZap cores most, then SkarmBlissZap teams appear on top
+sortBuilderByCore = 1 
+### SET AT MOST ONE OF THREE BELOW to True, set all to False to preserve generation order 
+## Set to True to sort across generations by alphanumeric order
+## ie. gen1 appears at top of builder, gen7 at bottom
+sortGenByAlphabetical = False
+## Set to True to sort across generations by reverse alphanumeric order
+## ie. gen7 appears at top of builder, gen1 at bottom
+sortGenByReverseAlphabetical = False
+## Set to True to sort across generations by team frequency
+## ie. gen3ou appears at top of builder if gen3ou has most teams
+sortGenByFrequency = True
+
+######## PARAMETERS END HERE ########
+
+## Extracts set from text and puts it into a dict
+def ExtractSet(setText):
+    stat2index = {
+    'HP' : 0,
+    'Atk' : 1,
+    'Def' : 2,
+    'SpA' : 3,
+    'SpD' : 4,
+    'Spe' : 5
+    }
+    setDict = {}
+    # for statistics
+    setDict['SharedMoves1'] = dict()
+    setDict['SharedMoves2'] = dict()
+    # obtain gender, nickname, item and name
+    setDict['Gender'] = ''
+    setDict['Nickname'] = ''
+    setDict['Item'] = ''
+    pos2 = max(setText.rfind(' (F) @ '),setText.rfind(' (F)  \n'))
+    if pos2 > -1:
+        setDict['Gender'] = 'F'
+    else:
+        pos2 = max(setText.rfind(' (M) @ '),setText.rfind(' (M)  \n'))
+        if pos2 > -1:
+            setDict['Gender'] = 'M'
+        else:
+            pos2 = setText.rfind(' @ ')
+            if pos2 == -1:
+                pos2 = setText.find('  \n')
+    if setText[pos2-1] == ')':
+        pos2 = pos2 - 1;
+        pos1 = pos2 - 1;
+        while setText[pos1] != '(':
+            pos1 = pos1 - 1;
+        pos1 = pos1 + 1;
+        setDict['Nickname'] = setText[:pos1-2]
+    else:
+        pos1 = 0;
+    posItem = setText.find(' @ ',pos2) + 3
+    setDict['Name'] = setText[pos1:pos2]
+    if posItem != -1:
+        setDict['Item'] = setText[posItem:setText.find('  \n')]
+    
+    # obtain shiny status
+    posShiny = setText.find('\nShiny: Yes')
+    setDict['Shiny'] = (posShiny > -1)
+    # obtain current moves
+    setDict['Moveset'] = list()
+    nlindex = list() # newline indices
+    lenset = len(setText)
+    posMove1 = lenset
+    while setText.rfind('- ',0,posMove1) > -1: 
+        posMove1 = setText.rfind('- ',0,posMove1)
+        posMove2 = setText.find('\n',posMove1)
+        setDict['Moveset'].insert(0,setText[posMove1+2:posMove2-2]) # Extract moves
+    partition = posMove1;
+    
+    # obtain current EVs
+    setDict['EVs'] = np.zeros(6)
+    EVindex = list()
+    if setText.find('\nEVs: ') > -1:
+        EVindex.append(setText.find('\nEVs: ')+5)
+        EVindex.append(setText.find('\n',EVindex[0]))
+        EVspaces = [EVindex[0]]
+        while EVspaces[-1] < EVindex[1]-1:
+            EVspaces.append(setText.find(' ',EVspaces[-1]+1))
+        for e in range(0,int(len(EVspaces)/3)):
+            EVs = int(setText[EVspaces[3*e]+1:EVspaces[3*e+1]])
+            stat = setText[EVspaces[3*e+1]+1:EVspaces[3*e+2]]
+            setDict['EVs'][stat2index[stat]] = EVs
+    # obtain current IVs
+    setDict['IVs'] = np.zeros(6) + 31
+    IVindex = list()
+    if setText.find('\nIVs: ') > -1:
+        IVindex.append(setText.find('\nIVs: ')+5)
+        IVindex.append(setText.find('\n',IVindex[0]))
+        IVspaces = [IVindex[0]]
+        while IVspaces[-1] < IVindex[1]-1:
+            IVspaces.append(setText.find(' ',IVspaces[-1]+1))
+        for e in range(0,int(len(IVspaces)/3)):
+            IVs = int(setText[IVspaces[3*e]+1:IVspaces[3*e+1]])
+            stat = setText[IVspaces[3*e+1]+1:IVspaces[3*e+2]]
+            setDict['IVs'][stat2index[stat]] = IVs 
+    # obtain Nature
+    setDict['Nature'] = ''
+    posNature2 = setText.find('Nature  \n') - 1
+    if posNature2 > -1:
+        posNature1 = setText.rfind('\n',0,posNature2) + 1
+        setDict['Nature'] = setText[posNature1:posNature2]
+    # obtain current ability
+    posAbility1 = setText.find('\nAbility: ') + 10
+    posAbility2 = setText.find('\n',posAbility1) - 2
+    setDict['Ability'] = setText[posAbility1:posAbility2]
+    # obtain current level
+    setDict['Level'] = 100
+    if setText.find('\nLevel: ') > -1:
+        posLevel1 = setText.find('\nLevel: ') + 8
+        posLevel2 = setText.find('\n',posLevel1)
+        setDict['Level'] = int(setText[posLevel1:posLevel2])
+    # obtain current happiness
+    setDict['Happiness'] = 255
+    if setText.find('\nHappiness: ') > -1:
+        posHappiness1 = setText.find('\nHappiness: ') + 12
+        posHappiness2 = setText.find('\n',posHappiness1)
+        setDict['Happiness'] = int(setText[posHappiness1:posHappiness2])
+    # obtain current item
+    setDict['Item'] = ''
+    postemp = setText.find(setDict['Name']) + len(setDict['Name'])
+    if setText.find(' @ ',postemp) > -1:
+        posItem1 = setText.find(' @ ',postemp) + 3
+        posItem2 = setText.find('\n',posItem1) - 2
+        setDict['Item'] = setText[posItem1:posItem2]
+    return setDict
+
+def PrintSet(setDict,showShiny,showIVs,showNicknames,sortMovesByAlphabetical,sortMovesByDescendingFrequency,sortMovesByAscendingFrequency):
+    index2stat = {
+    0 : 'HP',
+    1 : 'Atk',
+    2 : 'Def',
+    3 : 'SpA',
+    4 : 'SpD',
+    5 : 'Spe'
+    }
+    setText = ''
+    if setDict['Nickname'] != '' and showNicknames:
+        setText += setDict['Nickname']
+        setText += ' ('
+    setText += setDict['Name']
+    if setDict['Nickname'] != '' and showNicknames:
+        setText += ')'
+    if setDict['Gender'] != '':
+        setText += ' ('
+        setText += setDict['Gender']
+        setText += ')'
+    if setDict['Item'] != '':
+        setText += ' @ '
+        setText += setDict['Item']
+    setText += '  \nAbility: '
+    setText += setDict['Ability']
+    if setDict['Level'] != 100:
+        setText += '  \nLevel: '
+        setText += str(int(setDict['Level']))
+    if setDict['Shiny'] == True and showShiny:
+        setText += ' \nShiny: Yes'
+    if setDict['Happiness'] != 255:
+        setText += '  \nHappiness: '
+        setText += str(int(setDict['Happiness']))
+    if np.sum(setDict['EVs']) > 0:
+        setText += '  \nEVs: '
+        for n in range(6):
+            if setDict['EVs'][n] > 0:
+                setText += str(int(setDict['EVs'][n])) + ' ' + index2stat[n] + ' / '
+        if setText[-3:] == ' / ':
+            setText = setText[:-3]
+    if setDict['Nature'] != '':
+        setText += '  \n'
+        setText += setDict['Nature']
+        setText += ' Nature'
+    if np.abs(np.sum(setDict['IVs']) - 31*6) > 0.5:
+        sharedMoves1 = list(setDict['SharedMoves1'].keys())
+        sharedMoves2 = list(setDict['SharedMoves2'].keys())
+        sharedMoves = sharedMoves1 + sharedMoves2
+        hasHP = 0
+        for m in sharedMoves:
+            if m.find('Hidden Power') > -1:
+                hasHP += 1
+        if showIVs or hasHP == 0:
+            setText += '  \nIVs: '
+            for n in range(6):
+                if setDict['IVs'][n] < 31:
+                    setText += str(int(setDict['IVs'][n])) + ' ' + index2stat[n] + ' / '
+            if setText[-3:] == ' / ':
+                setText = setText[:-3]
+    setText += '  \n'
+    moveList = list(setDict['Moveset'])
+    if sortMovesByAlphabetical:
+        moveList.sort()
+    if sortMovesByDescendingFrequency:
+        moveList.sort(key=lambda k:moveFrequency[setDict['Name']][k], reverse=True)
+    if sortMovesByAscendingFrequency:
+        moveList.sort(key=lambda k:moveFrequency[setDict['Name']][k])
+    for m in moveList:
+        if m in setDict['SharedMoves2']:
+            moves2 = list(setDict['SharedMoves2'].keys())
+            moves2Sorted = sorted(moves2, key=lambda k:sum(list(setDict['SharedMoves2'][k].values())), reverse=True)
+            moveText = moves2Sorted[0]
+            for mm in range(1,len(moves2Sorted)):
+                moveText += ' / '
+                moveText += moves2Sorted[mm]
+        elif m in setDict['SharedMoves1']:
+            moves1 = list(setDict['SharedMoves1'].keys())
+            moves1Sorted = sorted(moves1, key=lambda k:setDict['SharedMoves1'][k], reverse=True)
+            moveText = moves1Sorted[0]
+            for mm in range(1,len(moves1Sorted)):
+                moveText += ' / '
+                moveText += moves1Sorted[mm]
+        else:
+            moveText = m
+        setText += '- '
+        setText += moveText
+        setText += '  \n'
+    return setText
+
+analyzeTeams = True
+numTeamsGen = dict()
+foutTemplate = fin[:fin.rfind('.')]
+# foutTemplate = 'convenientName.txt'
+
+if allGenerations:
+    generation = list()
+    f = open(fin)
+    line = f.readline()
+    while line:
+        if line.find('=== [') > -1:
+            if line[0:5] == '=== [' and line[-4:-1] == '===':
+                g = line[5:line.find(']')]
+                if g not in generation:
+                    generation.append(g)
+        line = f.readline()
+    f.close()
+
+for gen in generation:
+    teamPreview = (int(gen[3]) >= 5)
+    setList = list()
+    teamList = list()
+    rightGen = False if analyzeTeams else True
+    f = open(fin)
+    line = f.readline()
+    buffer = line
+    lineStatus = 0; # 0 = importable not found, 1 if found
+    while line:
+        if analyzeTeams:
+            if line.find('===') > -1:
+                if line[0:3] == '===' and line[-4:-1] == '===':
+                    if line.find('[' + gen +  ']') > -1:
+                        # teamList contains (index, name, score)
+                        # teamList.append((len(setList), line[7+len(gen):-5]), 0) 
+                        if len(teamList) > 0:
+                            teamList[-1]['Index'][1] = len(setList)
+                        teamList.append({'Index': [len(setList),len(setList)], 'Name': line[7+len(gen):-5], 'Score': [0,0,0,0,0,0]})
+                        rightGen = True
+                    else:
+                        rightGen = False
+                        line = f.readline()
+                        continue
+            elif not rightGen:
+                line = f.readline()
+                continue
+
+        if lineStatus == 0: # If importable has not been found
+            mark = line.find('Ability:') # Use Ability to find importable set
+            if mark == 0: 
+                lineStatus = 1
+                montxt = buffer
+            buffer = line
+        if lineStatus == 1: # If importable has been found
+            if line == '\n': # If linebreak has been found
+                setList.append(ExtractSet(montxt)) # Save as a dict
+                lineStatus = 0
+            else:
+                montxt = montxt + line # Add remaining importable lines
+        line = f.readline()
+    f.close()
+    if lineStatus == 1: # If importable has been found
+        setList.append(ExtractSet(montxt+'  \n')) # Save as a dict
+        lineStatus = 0
+    if analyzeTeams:
+        teamList[-1]['Index'][1] = len(setList)
+        if len(setList) == teamList[-1]['Index'][0]:
+            teamList.pop()
+        numTeamsGen[gen] = len(teamList)
+
+    ## Find cores and leads
+    
+    if analyzeTeams:
+        coreList = [dict(),dict(),dict(),dict(),dict(),dict()]
+        leadList = dict()
+        for n in range(len(teamList)):
+            for p in range(6):
+                core = combinations([s['Name'] for s in setList[teamList[n]['Index'][0]:teamList[n]['Index'][1]]],p+1)
+                for c in core:
+                    cSort = tuple(sorted(c))
+                    if cSort in coreList[p]:
+                        coreList[p][cSort] += 1
+                    else:
+                        coreList[p][cSort] = 1
+            if not teamPreview:
+                if setList[teamList[n]['Index'][0]]['Name'] in leadList:
+                    leadList[setList[teamList[n]['Index'][0]]['Name']] += 1
+                else:
+                    leadList[setList[teamList[n]['Index'][0]]['Name']] = 1
+                    
+        ## Sort builder
+        
+        if sortBuilder:
+            if sortTeamsByMonFrequency:
+                off = 1 - teamPreview
+                for n in range(len(teamList)):
+                    teamSets = setList[teamList[n]['Index'][0]+off:teamList[n]['Index'][1]]
+                    teamSets.sort(key=lambda x:coreList[0][(x['Name'],)])
+                    setList[teamList[n]['Index'][0]+off:teamList[n]['Index'][1]] = teamSets
+                
+            ## Score the teams
+
+            for n in range(len(teamList)):
+                for p in range(6):
+                    core = combinations([s['Name'] for s in setList[teamList[n]['Index'][0]:teamList[n]['Index'][1]]],p+1)
+                    numCombinations = 0
+                    for c in core:
+                        cSort = tuple(sorted(c))
+                        teamList[n]['Score'][p] += coreList[p][cSort] 
+                        numCombinations += 1
+                    teamList[n]['Score'][p] = teamList[n]['Score'][p] / len(teamList) # / numCombinations
+                        
+
+    ## Aggregates sets by EV equivalence
+    
+    setListNameSorted = sorted(copy.deepcopy(setList), key=lambda x:x['Name']); # Alphabetical-sorted list of sets in dict format
+    setListEVcombined = list() # list of dicts of full sets
+    chosenMon = '';
+    chosenMonIdxEVcombined = 0;
+    setListLen = len(setListNameSorted)
+    for n in range(setListLen):
+        currentSetDict = setListNameSorted[n]
+        currentCount = 1
+
+        # determine set equivalence except EVs and IVs
+        matchIndex = -1; # matching set index
+        nn = chosenMonIdxEVcombined # iterator
+        while (matchIndex < 0 and nn < len(setListEVcombined)):
+            if currentSetDict['Name'] == chosenMon:  
+                if (currentSetDict['Nature'] == setListEVcombined[nn]['Nature'] and
+                currentSetDict['Ability'] == setListEVcombined[nn]['Ability'] and
+                currentSetDict['Level'] == setListEVcombined[nn]['Level'] and
+                currentSetDict['Happiness'] == setListEVcombined[nn]['Happiness'] and
+                currentSetDict['Item'] == setListEVcombined[nn]['Item'] and
+                set(currentSetDict['Moveset']) == set(setListEVcombined[nn]['Moveset'])):
+                    if np.sum(np.abs(currentSetDict['EVs'] - setListEVcombined[nn]['EVs'])) <= EVthreshold*2:
+                        if np.sum(np.abs(currentSetDict['IVs'] - setListEVcombined[nn]['IVs'])) <= IVthreshold:
+                            matchIndex = nn
+                            if currentCount <= setListEVcombined[nn]['SubCountEV']:
+                                setListEVcombined[nn]['CountEV'] += currentCount
+                            else:
+                                setListEVcombined[nn]['CountEV'] += currentCount
+                                setListEVcombined[nn]['SubCountEV'] = currentCount
+                                setListEVcombined[nn]['EVs'] = currentEVs
+                                setListEVcombined[nn]['IVs'] = currentIVs
+                                setListEVcombined[nn]['Index'] = n
+            else:
+                chosenMonIdxEVcombined = len(setListEVcombined)
+                chosenMon = currentSetDict['Name']
+            nn += 1
+        if n == 0:
+            chosenMonIdxEVcombined = len(setListEVcombined)
+            chosenMon = currentSetDict['Name']
+        if matchIndex < 0:
+            currentSetDict['SubCountEV'] = currentCount;
+            currentSetDict['CountEV'] = currentCount;
+            currentSetDict['Index'] = n;
+            setListEVcombined.append(currentSetDict)
+
+    ## Sorting
+    setListEVcombinedRank = np.zeros(len(setListEVcombined))
+    for ii in range(0,len(setListEVcombined)):
+        name = setListEVcombined[ii]['Name']
+        count = setListEVcombined[ii]['CountEV']
+        frontIdent1 = ord(name[0])
+        frontIdent2 = ord(name[1])
+        posSeparator = max(name.find('-'),name.find(' '))
+        if posSeparator > -1:
+            backIdent1 = ord(name[posSeparator+1])
+            if posSeparator + 2 < len(name):
+                backIdent2 = ord(name[posSeparator+2])
+            else:
+                backIdent2 = 0
+        else:
+            backIdent1 = ord(name[-2])
+            backIdent2 = ord(name[-1])
+        setListEVcombinedRank[ii] = (frontIdent1*2**24 + frontIdent2*2**16 + backIdent1*2**8 + backIdent2)*2**10 - count
+    setListEVsorted = [setListEVcombined[i[0]] for i in sorted(enumerate(setListEVcombinedRank), key=lambda x:x[1])]
+
+    ## Count move frequency
+    moveFrequency = dict()
+    monFrequency = dict()
+    for ii in range(0,len(setListEVsorted)):
+        if not (setListEVsorted[ii]['Name'] in moveFrequency):
+            moveFrequency[setListEVsorted[ii]['Name']] = dict()
+            monFrequency[setListEVsorted[ii]['Name']] = setListEVsorted[ii]['CountEV']
+        else:
+            monFrequency[setListEVsorted[ii]['Name']] += setListEVsorted[ii]['CountEV']
+        for m in setListEVsorted[ii]['Moveset']:
+            if not (m in  moveFrequency[setListEVsorted[ii]['Name']]):
+                moveFrequency[setListEVsorted[ii]['Name']][m] = setListEVsorted[ii]['CountEV']
+            else:
+                moveFrequency[setListEVsorted[ii]['Name']][m] += setListEVsorted[ii]['CountEV']
+
+    ## Aggregates sets by move equivalence up to one slot
+
+    setListMoves1Combined = list() # list of dicts of full sets
+    chosenMon = '';
+    chosenMonIdxMoves1Combined = 0;
+    for n in range(len(setListEVsorted)):
+        currentSetDict = setListEVsorted[n]
+        currentSetDict['SharedMoves1'] = dict()
+        currentCount = setListEVsorted[n]['CountEV']
+        currentSetDict['CountMoves'] = setListEVsorted[n]['CountEV']
+        # determine set equivalence except EVs and IVs
+        matchIndex = -1; # matching set index
+        nn = chosenMonIdxMoves1Combined # iterator
+        while (matchIndex < 0 and nn < len(setListMoves1Combined) and combineMoves >= 1):
+            if currentSetDict['Name'] == chosenMon: 
+                if(currentSetDict['Nature'] == setListMoves1Combined[nn]['Nature'] and
+                currentSetDict['Ability'] == setListMoves1Combined[nn]['Ability'] and
+                currentSetDict['Level'] == setListMoves1Combined[nn]['Level'] and
+                currentSetDict['Happiness'] == setListMoves1Combined[nn]['Happiness'] and
+                currentSetDict['Item'] == setListMoves1Combined[nn]['Item']):
+                    if np.sum(np.abs(currentSetDict['EVs'] - setListMoves1Combined[nn]['EVs'])) <= EVthreshold*2:
+                        if np.sum(np.abs(currentSetDict['IVs'] - setListMoves1Combined[nn]['IVs'])) <= IVthreshold:
+                            # Ensure two movesets are equivalent except for one move
+                            moveMatches1 = 0
+                            moveMatches2 = 0
+                            for move in currentSetDict['Moveset']:
+                                if move in setListMoves1Combined[nn]['Moveset']:
+                                    moveMatches1 += 1
+                                else:
+                                    nonCommonMove1 = move
+                            for move in setListMoves1Combined[nn]['Moveset']:
+                                if move in currentSetDict['Moveset']:
+                                    moveMatches2 += 1
+                                else:
+                                    nonCommonMove2 = move
+                            if len(setListMoves1Combined[nn]['Moveset']) == len(currentSetDict['Moveset']):
+                                if moveMatches1 == moveMatches2:
+                                    if moveMatches1 + 1 == len(setListMoves1Combined[nn]['Moveset']):
+                                        # Moves are guaranteed to be in order of popularity by previous construction
+                                        if bool(setListMoves1Combined[nn]['SharedMoves1']):
+                                            if nonCommonMove2 in setListMoves1Combined[nn]['SharedMoves1']:
+                                                setListMoves1Combined[nn]['SharedMoves1'][nonCommonMove1] = currentCount
+                                                matchIndex = nn   
+                                                setListMoves1Combined[nn]['CountMoves'] += currentCount
+                                        else:
+                                            setListMoves1Combined[nn]['SharedMoves1'][nonCommonMove2] = setListMoves1Combined[nn]['CountMoves']
+                                            setListMoves1Combined[nn]['SharedMoves1'][nonCommonMove1] = currentCount
+                                            matchIndex = nn
+                                            setListMoves1Combined[nn]['CountMoves'] += currentCount
+            else:
+                chosenMonIdxMoves1Combined = len(setListMoves1Combined)
+                chosenMon = currentSetDict['Name']
+            nn += 1
+        if n == 0:
+            chosenMonIdxMoves1Combined = len(setListMoves1Combined)
+            chosenMon = currentSetDict['Name']
+        if matchIndex < 0:
+            setListMoves1Combined.append(currentSetDict)
+
+    ## Sorting
+    setListMoves1CombinedRank = np.zeros(len(setListMoves1Combined))
+    for ii in range(0,len(setListMoves1Combined)):
+        name = setListMoves1Combined[ii]['Name']
+        count = setListMoves1Combined[ii]['CountMoves']
+        frontIdent1 = ord(name[0])
+        frontIdent2 = ord(name[1])
+        posSeparator = max(name.find('-'),name.find(' '))
+        if posSeparator > -1:
+            backIdent1 = ord(name[posSeparator+1])
+            if posSeparator + 2 < len(name):
+                backIdent2 = ord(name[posSeparator+2])
+            else:
+                backIdent2 = 0
+        else:
+            backIdent1 = ord(name[-2])
+            backIdent2 = ord(name[-1])
+        setListMoves1CombinedRank[ii] = (frontIdent1*2**24 + frontIdent2*2**16 + backIdent1*2**8 + backIdent2)*2**10 - count
+    setListMoves1Sorted = [setListMoves1Combined[i[0]] for i in sorted(enumerate(setListMoves1CombinedRank), key=lambda x:x[1])]
+
+    ## Aggregates sets by move equivalence up to two slots
+
+    setListMoves2Combined = list() # list of dicts of full sets
+    chosenMon = '';
+    chosenMonIdxMoves2Combined = 0;
+    for n in range(len(setListMoves1Sorted)):
+        currentSetDict = setListMoves1Sorted[n]
+        currentSetDict['SharedMoves2'] = dict()
+        currentCount = setListMoves1Sorted[n]['CountMoves']
+        currentSetDict['CountMoves'] = setListMoves1Sorted[n]['CountMoves']
+        # determine set equivalence except EVs and IVs
+        matchIndex = -1; # matching set index
+        nn = chosenMonIdxMoves2Combined # iterator
+        while (matchIndex < 0 and nn < len(setListMoves2Combined) and combineMoves >= 2):
+            if currentSetDict['Name'] == chosenMon: 
+                if(currentSetDict['Nature'] == setListMoves2Combined[nn]['Nature'] and
+                currentSetDict['Ability'] == setListMoves2Combined[nn]['Ability'] and
+                currentSetDict['Level'] == setListMoves2Combined[nn]['Level'] and
+                currentSetDict['Happiness'] == setListMoves2Combined[nn]['Happiness'] and
+                currentSetDict['Item'] == setListMoves2Combined[nn]['Item']):
+                    if np.sum(np.abs(currentSetDict['EVs'] - setListMoves2Combined[nn]['EVs'])) <= EVthreshold*2:
+                        if np.sum(np.abs(currentSetDict['IVs'] - setListMoves2Combined[nn]['IVs'])) <= IVthreshold:
+                            moveMatches1 = 0
+                            moveMatches2 = 0
+                            for move in currentSetDict['Moveset']:
+                                if move in setListMoves2Combined[nn]['Moveset']:
+                                    moveMatches1 += 1
+                                else:
+                                    nonCommonMove1 = move
+                            for move in setListMoves2Combined[nn]['Moveset']:
+                                if move in currentSetDict['Moveset']:
+                                    moveMatches2 += 1
+                                else:
+                                    nonCommonMove2 = move
+                            if len(setListMoves2Combined[nn]['Moveset']) == len(currentSetDict['Moveset']):
+                                if moveMatches1 == moveMatches2:
+                                    if moveMatches1 + 1 == len(setListMoves2Combined[nn]['Moveset']):
+                                        # Compare equivalence and order of previously slashed moves
+                                        if set(currentSetDict['SharedMoves1'].keys()) == set(setListMoves2Combined[nn]['SharedMoves1'].keys()):
+                                            order1 = [currentSetDict['SharedMoves1'][key] for key in currentSetDict['SharedMoves1'].keys()]
+                                            order2 = [setListMoves2Combined[nn]['SharedMoves1'][key] for key in currentSetDict['SharedMoves1'].keys()]
+                                            r = 0
+                                            corr = True
+                                            while r < len(order1) and corr == True:
+                                                s = 0
+                                                while s < r and corr == True:
+                                                    corr = (order1[r] <= order1[s] and order2[r] <= order2[s]) or (order1[r] >= order1[s] and order2[r] >= order2[s])
+                                                    s += 1
+                                                r += 1
+                                            if corr:
+                                                if bool(setListMoves2Combined[nn]['SharedMoves2']):
+                                                    if nonCommonMove2 in setListMoves2Combined[nn]['SharedMoves2']:
+                                                        setListMoves2Combined[nn]['SharedMoves2'][nonCommonMove1] = currentSetDict['SharedMoves1']
+                                                        matchIndex = nn   
+                                                        setListMoves2Combined[nn]['CountMoves'] += currentCount
+                                                else:
+                                                    setListMoves2Combined[nn]['SharedMoves2'][nonCommonMove2] = setListMoves2Combined[nn]['SharedMoves1']
+                                                    setListMoves2Combined[nn]['SharedMoves2'][nonCommonMove1] = currentSetDict['SharedMoves1']
+                                                    matchIndex = nn
+                                                    setListMoves2Combined[nn]['CountMoves'] += currentCount
+            else:
+                chosenMonIdxMoves2Combined = len(setListMoves2Combined)
+                chosenMon = currentSetDict['Name']
+            nn += 1
+        if n == 0:
+            chosenMonIdxMoves2Combined = len(setListMoves2Combined)
+            chosenMon = currentSetDict['Name']
+        if matchIndex < 0:
+            setListMoves2Combined.append(currentSetDict)
+
+    ## Sorting
+    setListMoves2CombinedRank = np.zeros(len(setListMoves2Combined))
+    for ii in range(0,len(setListMoves2Combined)):
+        name = setListMoves2Combined[ii]['Name']
+        count = setListMoves2Combined[ii]['CountMoves']
+        frontIdent1 = ord(name[0])
+        frontIdent2 = ord(name[1])
+        posSeparator = max(name.find('-'),name.find(' '))
+        if posSeparator > -1:
+            backIdent1 = ord(name[posSeparator+1])
+            if posSeparator + 2 < len(name):
+                backIdent2 = ord(name[posSeparator+2])
+            else:
+                backIdent2 = 0
+        else:
+            backIdent1 = ord(name[-2])
+            backIdent2 = ord(name[-1])
+        setListMoves2CombinedRank[ii] = (frontIdent1*2**24 + frontIdent2*2**16 + backIdent1*2**8 + backIdent2)*2**10 - count
+    setListMoves2Sorted = [setListMoves2Combined[i[0]] for i in sorted(enumerate(setListMoves2CombinedRank), key=lambda x:x[1])]
+
+    ## Print statistics to file
+    f = open(foutTemplate + '_' + gen + '_statistics' + '.txt','w')
+    totalMons = sum(list(monFrequency.values()))
+    maxNameLen = max([len(s['Name']) for s in setList])
+    if analyzeTeams:
+        if not teamPreview:
+            leadFrequencySorted = [(l,leadList[l]) for l in sorted(leadList, key=lambda x:leadList[x], reverse=True)]
+            f.write('Team Lead Arranged by Frequency\n')
+            f.write(' Counts | Freq (%) | Lead\n')
+            for (lead,freq) in leadFrequencySorted:
+                f.write((7-len(str(freq)))*' ' + str(freq))
+                f.write(' | ')
+                percentStr = "{:.3f}".format(freq/len(teamList)*100)
+                f.write((8-len(percentStr))*' ' + percentStr)
+                f.write(' | ')
+                f.write(' '*(maxNameLen-len(lead)) + lead)
+                f.write('\n')
+            f.write('\n')
+        for p in range(6):
+            # totalCores = sum(list(coreList[p]))
+            
+            coreFrequencySorted = [(c,coreList[p][c]) for c in sorted(coreList[p], key=lambda x:coreList[p][x], reverse=True)]
+            if p == 0:
+                f.write('Pokemon Arranged by Frequency\n')
+                f.write(' Counts | Freq (%) | Pokemon\n')
+            else:
+                f.write(str(p+1) + '-Cores Arranged by Frequency\n')
+                f.write(' Counts | Freq (%) | Cores\n')
+            for (core,freq) in coreFrequencySorted:
+                f.write((7-len(str(freq)))*' ' + str(freq))
+                f.write(' | ')
+                percentStr = "{:.3f}".format(freq/len(teamList)*100)
+                f.write((8-len(percentStr))*' ' + percentStr)
+                f.write(' | ')
+                for q in range(p):
+                    f.write(' '*(maxNameLen-len(core[q])) + core[q])
+                    f.write(', ')
+                f.write(' '*(maxNameLen-len(core[p])) + core[p])
+                f.write('\n')
+            f.write('\n')
+    else: 
+        monFrequencySorted = [(mon,monFrequency[mon]) for mon in sorted(monFrequency, key=lambda x:monFrequency[x], reverse=True)]
+        f.write('Pokemon Arranged by Frequency\n')
+        f.write(' Counts | Freq (%) | Pokemon\n')
+        for (mon,freq) in monFrequencySorted:
+            f.write((7-len(str(freq)))*' ' + str(freq))
+            f.write(' | ')
+            percentStr = "{:.3f}".format(freq/totalMons*100)
+            f.write((8-len(percentStr))*' ' + percentStr)
+            f.write(' | ')
+            f.write(mon)
+            f.write('\n')
+
+    ## Print builder to file by gen
+    if analyzeTeams and sortBuilder:
+        f = open(foutTemplate + '_' + gen + '_sorted_builder' + '.txt','w')
+        if sortBuilderByAlphabetical or sortBuilderByReverseAlphabetical:
+            if sortBuilderByLead:
+                teamList.sort(key=lambda x:(-coreList[0][(setList[x['Index'][0]]['Name'],)],x['Name']),reverse=sortBuilderByReverseAlphabetical)
+            else:
+                teamList.sort(key=lambda x:x['Name'],reverse=sortBuilderByReverseAlphabetical)
+        elif sortBuilderByCore > 0:
+            if sortBuilderByLead:
+                teamList.sort(key=lambda x:(coreList[0][(setList[x['Index'][0]]['Name'],)],x['Score'][sortBuilderByCore-1]),reverse=True)
+            else:
+                teamList.sort(key=lambda x:x['Score'][sortBuilderByCore-1],reverse=True)
+        for n in range(len(teamList)):
+            f.write('=== [' + gen + '] ')
+            f.write(teamList[n]['Name'])
+            f.write(' ===\n\n')
+            for i in range(teamList[n]['Index'][0],teamList[n]['Index'][1]):
+                f.write(PrintSet(setList[i],True,True,True,sortMovesByAlphabetical,sortMovesByDescendingFrequency,sortMovesByAscendingFrequency))
+                f.write('\n')
+            f.write('\n')          
+
+    ## Print sets to file
+    for fracThreshold in ignoreSetsFraction:
+        if fracThreshold == 0:
+            fout = foutTemplate + '_' + gen + '_sets' + '.txt'
+        else:
+            fout = foutTemplate + '_' + gen + '_sets' + '_cut_' + str(int(1/fracThreshold)) +'.txt'
+        f = open(fout,'w')
+        f.write('Built from ' + foutTemplate + '.txt\n')
+        f.write('-'*50 + '\n')
+        f.write('Fraction of sets ignored: ')
+        if fracThreshold == 0:
+            f.write('All')
+        else: 
+            f.write("{:.2f}".format(fracThreshold*100) + '% or 1/' + str(int(1/fracThreshold)))
+        f.write('\n')
+        f.write('EV movements ignored: ' + str(EVthreshold) + '\n')  
+        f.write('IV sum deviation from 31 ignored: ')
+        if IVthreshold < 31*6:
+            f.write(str(IVthreshold))
+        else:
+            f.write('All')
+        f.write('\n')
+        f.write('Moveslots combined: ' + str(combineMoves) + '\n')
+        f.write('Move Sort Order: ')
+        if sortMovesByAscendingFrequency:
+            f.write('Increasing Frequency')
+        elif sortMovesByDescendingFrequency:
+            f.write('Decreasing Frequency')
+        elif sortMovesByAlphabetical:
+            f.write('Alphabetical')
+        else:
+            f.write('Retained From Import')
+        f.write('\n')
+        f.write('Show IVs when Hidden Power Type is ambiguous: ')
+        f.write('Yes' if showIVs else 'No')
+        f.write('\n')
+        f.write('Show Shiny: ')
+        f.write('Yes' if showShiny else 'No')
+        f.write('\n')
+        f.write('Show Nicknames: ')
+        f.write('Yes' if showNicknames else 'No')
+        f.write('\n')
+        f.write('-'*50 + '\n')
+        f.write('To read statistics:\n')
+        f.write('Counts | Frequency given the same Pokemon (%)\n\n')
+
+        for s in setListMoves2Sorted:
+            frac = s['CountMoves']/monFrequency[s['Name']]
+            if frac >= fracThreshold:
+                f.write(PrintSet(s,showShiny,showIVs,showNicknames,sortMovesByAlphabetical,sortMovesByDescendingFrequency,sortMovesByAscendingFrequency))
+                if showStatisticsInSets:                
+                    f.write('-'*28 + '\n')
+                    if bool(s['SharedMoves1']) or bool(s['SharedMoves2']):
+                        moveCombinations = list()
+                        if bool(s['SharedMoves2']):
+                            for m2 in s['SharedMoves2']:
+                                for m1 in s['SharedMoves2'][m2]:
+                                    moveCombinations.append((m1 + ' / ' + m2, s['SharedMoves2'][m2][m1]))
+                        elif bool(s['SharedMoves1']):
+                            for m in s['SharedMoves1']:
+                                moveCombinations.append((m, s['SharedMoves1'][m]))
+                        moveCombinations.sort(key=lambda x:x[1],reverse=True)
+                        maxMoveCombinationsNameLen = max([len(m[0]) for m in moveCombinations])
+                        maxMoveCombinationsCountLen = max([len(str(m[1])) for m in moveCombinations])
+                        for (m,c) in moveCombinations:
+                            f.write(m + ' '*(maxMoveCombinationsNameLen-len(m)) + ': ')
+                            f.write(' '*(maxMoveCombinationsCountLen-len(str(c))) + str(c) + ' | ' + "{:.1f}".format(c/monFrequency[s['Name']]*100) + '%\n')
+                f.write('Total: ' + str(s['CountMoves']) + ' | ' + "{:.1f}".format(frac*100) + '%\n')
+                f.write('\n')
+        f.close()
+    
+## Print entire builder to file
+if analyzeTeams and sortBuilder:
+    if sortGenByAlphabetical or sortGenByReverseAlphabetical:
+        generation.sort(reverse=sortGenByReverseAlphabetical)
+    elif sortGenByFrequency:
+        generation.sort(key=lambda x:numTeamsGen[x],reverse=True)
+    fo = open(foutTemplate + '_full_sorted_builder' + '.txt','w')
+    for gen in generation:
+        fi = open(foutTemplate + '_' + gen + '_sorted_builder' + '.txt') 
+        line = fi.readline()
+        while line:
+            fo.write(line)
+            line = fi.readline()
+        fi.close()
+    fo.close()

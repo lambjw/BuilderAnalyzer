@@ -1,4 +1,4 @@
-### Written by vapicuno, 2019/05/12 v3
+### Written by vapicuno, 2019/06/10 v4
 ### python 3.5, numpy 1.11.1
 ### Takes in fin which is in showdown teambuilder format
 ### Spits out sets list by gen, builder by gen, stats by gen, and combined builder.  
@@ -7,10 +7,15 @@
 import numpy as np
 from itertools import combinations
 import copy
+import urllib.request
 
 ######## PARAMETERS FOR TUNING TO YOUR LIKING ########
 
-fin = 'my_builder.txt'
+fin = 'test_builder.txt'
+
+### DOWNLOAD LATEST POKEDEX
+## Set to True to download pokedex online, False to use offline copy
+downloadPokedex = True
 
 #### GENERATION PARAMETERS
 ## Set to True to evaluate all generations in the builder
@@ -55,24 +60,7 @@ showStatisticsInSets = True
 #### COMBINED BUILDER PARAMETERS
 ## Set to True to output a builder
 sortBuilder = True
-## Set to True to sort within teams by Pokemon frequency, otherwise False
-## Leads are preserved for < Gen 5 because of lack of team preview
-sortTeamsByMonFrequency = True
-## Set to True to sort teams within generations by lead, otherwise False
-sortBuilderByLead = True
-### SET AT MOST ONE OF THREE BELOW to True, set all to False to preserve team order within generation
-### can be used with sorting by lead
-## Set to True to sort within generations by team name alphanumeric order
-## ie. "MagBalance" appears on top of "MagOffense"
-sortBuilderByAlphabetical = False
-## Set to True to sort within generations by reverse team name alphanumeric order
-## ie. "MagOffense" appears on top of "MagBalance"
-sortBuilderByReverseAlphabetical = False
-## Set to number of pokemon in core to sort within generations by popularity of Core
-## ie. if = 1, teams with the most popular pokemon come up on top
-## ie. if = 2, and you like using SkarmBliss cores most, then SkarmBliss teams appear on top
-## ie. if = 3, and you like using SkarmBlissZap cores most, then SkarmBlissZap teams appear on top
-sortBuilderByCore = 1 
+### --- GENERATION-SORTING
 ### SET AT MOST ONE OF THREE BELOW to True, set all to False to preserve generation order 
 ## Set to True to sort across generations by alphanumeric order
 ## ie. gen1 appears at top of builder, gen7 at bottom
@@ -83,121 +71,309 @@ sortGenByReverseAlphabetical = False
 ## Set to True to sort across generations by team frequency
 ## ie. gen3ou appears at top of builder if gen3ou has most teams
 sortGenByFrequency = True
+### --- FOLDER SORTING WITHIN GENERATION
+### SET AT MOST ONE OF THREE BELOW to True, set all to False to preserve generation order 
+## Set to True to sort across folders by alphanumeric order
+## 'final teams' before 'test teams'
+sortFolderByAlphabetical = False
+## Set to True to sort across folders by reverse alphanumeric order
+## 'test teams' before 'final teams'
+sortFolderByReverseAlphabetical = False
+## Set to True to sort across folders by team frequency
+## ie. 'test teams' appear before 'final teams' if test teams has more teams
+sortFolderByFrequency = True
+### --- TEAM SORTING WITHIN FOLDER
+### SET AT MOST ONE OF THREE BELOW to True, set all to False to preserve team order within generation
+### can be used with sorting by lead
+## Set to True to sort within generations by team name alphanumeric order
+## ie. "MagBalance" appears on top of "MagOffense"
+sortTeamsByAlphabetical = False
+## Set to True to sort within generations by reverse team name alphanumeric order
+## ie. "MagOffense" appears on top of "MagBalance"
+sortTeamsByReverseAlphabetical = False
+## Set to True to sort teams within generations by lead, otherwise False
+sortTeamsByLead = True
+## Set to number of pokemon in core to sort within generations by popularity of Core
+## ie. if = 1, teams with the most popular pokemon come up on top
+## ie. if = 2, and you like using SkarmBliss cores most, then SkarmBliss teams appear on top
+## ie. if = 3, and you like using SkarmBlissZap cores most, then SkarmBlissZap teams appear on top
+sortTeamsByCore = 2
+### --- POKEMON SORTING WITHIN TEAMS
+## Set to True to sort within teams by Pokemon frequency, otherwise False
+## Leads are preserved for < Gen 5 because of lack of team preview
+sortTeamsByMonFrequency = True
 
 ######## PARAMETERS END HERE ########
 
+if downloadPokedex:
+    print('Beginning pokedex download...')
+    urlPokedex = 'https://raw.githubusercontent.com/Zarel/Pokemon-Showdown/master/data/pokedex.js'  
+    urllib.request.urlretrieve(urlPokedex, 'pokedex.js')  
+    print('Beginning items download...')
+    urlItems = 'https://raw.githubusercontent.com/Zarel/Pokemon-Showdown/master/data/items.js'  
+    urllib.request.urlretrieve(urlItems, 'items.js')  
+    print('Beginning moves download...')
+    urlMoves = 'https://raw.githubusercontent.com/Zarel/Pokemon-Showdown/master/data/moves.js'  
+    urllib.request.urlretrieve(urlMoves, 'moves.js')  
+    print('Beginning abilities download...')
+    urlAbilities = 'https://raw.githubusercontent.com/Zarel/Pokemon-Showdown/master/data/abilities.js'  
+    urllib.request.urlretrieve(urlAbilities, 'abilities.js')  
+    
+
+pokedexFile = open('pokedex.js')
+pokedexStr = pokedexFile.read()
+itemsFile = open('items.js')
+itemsStr = itemsFile.read()
+movesFile = open('moves.js')
+movesStr = movesFile.read()
+abilitiesFile = open('abilities.js')
+abilitiesStr = abilitiesFile.read()
+
 ## Extracts set from text and puts it into a dict
-def ExtractSet(setText):
-    stat2index = {
-    'HP' : 0,
-    'Atk' : 1,
-    'Def' : 2,
-    'SpA' : 3,
-    'SpD' : 4,
-    'Spe' : 5
-    }
+def ExtractSet(setText,inputFormatDense):
     setDict = {}
     # for statistics
     setDict['SharedMoves1'] = dict()
     setDict['SharedMoves2'] = dict()
-    # obtain gender, nickname, item and name
+    # initialize gender, nickname, item, name, moves and EVs
     setDict['Gender'] = ''
     setDict['Nickname'] = ''
     setDict['Item'] = ''
-    pos2 = max(setText.rfind(' (F) @ '),setText.rfind(' (F)  \n'))
-    if pos2 > -1:
-        setDict['Gender'] = 'F'
-    else:
-        pos2 = max(setText.rfind(' (M) @ '),setText.rfind(' (M)  \n'))
-        if pos2 > -1:
-            setDict['Gender'] = 'M'
-        else:
-            pos2 = setText.rfind(' @ ')
-            if pos2 == -1:
-                pos2 = setText.find('  \n')
-    if setText[pos2-1] == ')':
-        pos2 = pos2 - 1;
-        pos1 = pos2 - 1;
-        while setText[pos1] != '(':
-            pos1 = pos1 - 1;
-        pos1 = pos1 + 1;
-        setDict['Nickname'] = setText[:pos1-2]
-    else:
-        pos1 = 0;
-    posItem = setText.find(' @ ',pos2) + 3
-    setDict['Name'] = setText[pos1:pos2]
-    if posItem != -1:
-        setDict['Item'] = setText[posItem:setText.find('  \n')]
-    
-    # obtain shiny status
-    posShiny = setText.find('\nShiny: Yes')
-    setDict['Shiny'] = (posShiny > -1)
-    # obtain current moves
-    setDict['Moveset'] = list()
-    nlindex = list() # newline indices
-    lenset = len(setText)
-    posMove1 = lenset
-    while setText.rfind('- ',0,posMove1) > -1: 
-        posMove1 = setText.rfind('- ',0,posMove1)
-        posMove2 = setText.find('\n',posMove1)
-        setDict['Moveset'].insert(0,setText[posMove1+2:posMove2-2]) # Extract moves
-    partition = posMove1;
-    
-    # obtain current EVs
-    setDict['EVs'] = np.zeros(6)
-    EVindex = list()
-    if setText.find('\nEVs: ') > -1:
-        EVindex.append(setText.find('\nEVs: ')+5)
-        EVindex.append(setText.find('\n',EVindex[0]))
-        EVspaces = [EVindex[0]]
-        while EVspaces[-1] < EVindex[1]-1:
-            EVspaces.append(setText.find(' ',EVspaces[-1]+1))
-        for e in range(0,int(len(EVspaces)/3)):
-            EVs = int(setText[EVspaces[3*e]+1:EVspaces[3*e+1]])
-            stat = setText[EVspaces[3*e+1]+1:EVspaces[3*e+2]]
-            setDict['EVs'][stat2index[stat]] = EVs
-    # obtain current IVs
-    setDict['IVs'] = np.zeros(6) + 31
-    IVindex = list()
-    if setText.find('\nIVs: ') > -1:
-        IVindex.append(setText.find('\nIVs: ')+5)
-        IVindex.append(setText.find('\n',IVindex[0]))
-        IVspaces = [IVindex[0]]
-        while IVspaces[-1] < IVindex[1]-1:
-            IVspaces.append(setText.find(' ',IVspaces[-1]+1))
-        for e in range(0,int(len(IVspaces)/3)):
-            IVs = int(setText[IVspaces[3*e]+1:IVspaces[3*e+1]])
-            stat = setText[IVspaces[3*e+1]+1:IVspaces[3*e+2]]
-            setDict['IVs'][stat2index[stat]] = IVs 
-    # obtain Nature
+    setDict['Ability'] = ''
     setDict['Nature'] = ''
-    posNature2 = setText.find('Nature  \n') - 1
-    if posNature2 > -1:
-        posNature1 = setText.rfind('\n',0,posNature2) + 1
-        setDict['Nature'] = setText[posNature1:posNature2]
-    # obtain current ability
-    posAbility1 = setText.find('\nAbility: ') + 10
-    posAbility2 = setText.find('\n',posAbility1) - 2
-    setDict['Ability'] = setText[posAbility1:posAbility2]
-    # obtain current level
+    setDict['Shiny'] = False
+    setDict['Moveset'] = list()
+    setDict['EVs'] = np.zeros(6)
+    setDict['IVs'] = np.zeros(6) + 31
     setDict['Level'] = 100
-    if setText.find('\nLevel: ') > -1:
-        posLevel1 = setText.find('\nLevel: ') + 8
-        posLevel2 = setText.find('\n',posLevel1)
-        setDict['Level'] = int(setText[posLevel1:posLevel2])
-    # obtain current happiness
     setDict['Happiness'] = 255
-    if setText.find('\nHappiness: ') > -1:
-        posHappiness1 = setText.find('\nHappiness: ') + 12
-        posHappiness2 = setText.find('\n',posHappiness1)
-        setDict['Happiness'] = int(setText[posHappiness1:posHappiness2])
-    # obtain current item
-    setDict['Item'] = ''
-    postemp = setText.find(setDict['Name']) + len(setDict['Name'])
-    if setText.find(' @ ',postemp) > -1:
-        posItem1 = setText.find(' @ ',postemp) + 3
-        posItem2 = setText.find('\n',posItem1) - 2
-        setDict['Item'] = setText[posItem1:posItem2]
+    
+    if inputFormatDense:
+        indexDelimiter2 = setText.find('|')
+        setDict['Nickname'] = setText[0:indexDelimiter2]
+        
+        indexDelimiter1 = indexDelimiter2
+        indexDelimiter2 = setText.find('|', indexDelimiter1+1)
+        if indexDelimiter1 + 1 < indexDelimiter2:
+            parseName = setText[indexDelimiter1+1:indexDelimiter2]
+            indexNameKey = pokedexStr.find(parseName+': ')
+            indexSpecies = pokedexStr.find('species: ',indexNameKey)
+            indexName1 = pokedexStr.find('"',indexSpecies)
+            indexName2 = pokedexStr.find('"',indexName1+1)
+            setDict['Name'] = pokedexStr[indexName1+1:indexName2]
+        else:
+            setDict['Name'] = setDict['Nickname']
+            setDict['Nickname'] = ''
+            
+        indexDelimiter1 = indexDelimiter2
+        indexDelimiter2 = setText.find('|', indexDelimiter1+1)
+        if indexDelimiter1 + 1 < indexDelimiter2:
+            parseItem = setText[indexDelimiter1+1:indexDelimiter2]
+            indexItemKey = itemsStr.find('"'+parseItem+'": ')
+            indexItemName = itemsStr.find('name: ',indexItemKey)
+            indexItem1 = itemsStr.find('"',indexItemName)
+            indexItem2 = itemsStr.find('"',indexItem1+1)
+            setDict['Item'] = itemsStr[indexItem1+1:indexItem2]
+        
+        indexDelimiter1 = indexDelimiter2
+        indexDelimiter2 = setText.find('|', indexDelimiter1+1)
+        parseAbility = setText[indexDelimiter1+1:indexDelimiter2]
+        if parseAbility == '':
+            parseAbility == '0'
+        if len(parseAbility) <= 1:
+            if 'indexNameKey' in locals():
+                indexNameAbilities = indexNameKey
+            else: 
+                indexNameAbilities = pokedexStr.find('"'+setDict['Name']+'"')
+            indexAbilities = pokedexStr.find('abilities: ',indexNameAbilities)
+            indexAbility = pokedexStr.find(parseAbility+': ',indexAbilities)
+            indexAbility1 = pokedexStr.find('"',indexAbility)
+            indexAbility2 = pokedexStr.find('"',indexAbility1+1)
+            setDict['Ability'] = pokedexStr[indexAbility1+1:indexAbility2]
+        else:
+            indexAbilityKey = abilitiesStr.find('"'+parseAbility+'": ')
+            indexAbility = abilitiesStr.find('name: ',indexAbilityKey)
+            indexAbility1 = abilitiesStr.find('"',indexAbility)
+            indexAbility2 = abilitiesStr.find('"',indexAbility1+1)
+            setDict['Ability'] = abilitiesStr[indexAbility1+1:indexAbility2]
+        
+        indexDelimiter1 = indexDelimiter2
+        indexDelimiter2 = setText.find('|', indexDelimiter1+1)
+        if indexDelimiter1 + 1 < indexDelimiter2:
+            indexMove1 = indexDelimiter1
+            while indexMove1 < indexDelimiter2:
+                indexMove2 = setText.find(',',indexMove1+1,indexDelimiter2)
+                if indexMove2 == -1:
+                    indexMove2 = indexDelimiter2
+                parseMove = setText[indexMove1+1:indexMove2]
+                indexMoveKey = movesStr.find('"'+parseMove+'": ')
+                indexMoveName = movesStr.find('name: ',indexMoveKey)
+                indexMoveName1 = movesStr.find('"',indexMoveName)
+                indexMoveName2 = movesStr.find('"',indexMoveName1+1)
+                setDict['Moveset'].append(movesStr[indexMoveName1+1:indexMoveName2])
+                indexMove1 = indexMove2
+        
+        indexDelimiter1 = indexDelimiter2
+        indexDelimiter2 = setText.find('|', indexDelimiter1+1)
+        if indexDelimiter1 + 1 < indexDelimiter2:
+            setDict['Nature'] = setText[indexDelimiter1+1:indexDelimiter2]
+        
+        indexDelimiter1 = indexDelimiter2
+        indexDelimiter2 = setText.find('|', indexDelimiter1+1)
+        if indexDelimiter1 + 1 < indexDelimiter2:
+            indexEV1 = indexDelimiter1
+            for n in range(0,6):
+                if n < 5:
+                    indexEV2 = setText.find(',',indexEV1+1,indexDelimiter2)
+                else:
+                    indexEV2 = indexDelimiter2
+                EV = setText[indexEV1+1:indexEV2]
+                if EV == '':
+                    EV = 0
+                setDict['EVs'][n] = int(EV)
+                indexEV1 = indexEV2
+        
+        indexDelimiter1 = indexDelimiter2
+        indexDelimiter2 = setText.find('|', indexDelimiter1+1)
+        if indexDelimiter1 + 1 < indexDelimiter2:
+            setDict['Gender'] = setText[indexDelimiter1+1:indexDelimiter2]
+        
+        indexDelimiter1 = indexDelimiter2
+        indexDelimiter2 = setText.find('|', indexDelimiter1+1)
+        if indexDelimiter1 + 1 < indexDelimiter2:
+            indexIV1 = indexDelimiter1
+            for n in range(0,6):
+                if n < 5:
+                    indexIV2 = setText.find(',',indexIV1+1,indexDelimiter2)
+                else:
+                    indexIV2 = indexDelimiter2
+                IV = setText[indexIV1+1:indexIV2]
+                if IV == '':
+                    IV = 31
+                setDict['IVs'][n] = int(IV)
+                indexIV1 = indexIV2
+            
+        indexDelimiter1 = indexDelimiter2
+        indexDelimiter2 = setText.find('|', indexDelimiter1+1)
+        if indexDelimiter1 + 1 < indexDelimiter2:
+            setDict['Shiny'] = (setText[indexDelimiter1+1:indexDelimiter2] == 'S')
+        
+        indexDelimiter1 = indexDelimiter2
+        indexDelimiter2 = setText.find('|', indexDelimiter1+1)
+        if indexDelimiter1 + 1 < indexDelimiter2:
+            level = setText[indexDelimiter1+1:indexDelimiter2]
+            if level == '':
+                setDict['Level'] = 100
+            else:
+                setDict['Level'] = int(level)
+            
+        indexDelimiter1 = indexDelimiter2
+        happiness = setText[indexDelimiter1+1:]
+        if indexDelimiter1 + 1 < indexDelimiter2:
+            if level == '':
+                setDict['Happiness'] = 255
+            else:
+                setDict['Happiness'] = int(happiness)
+    else:
+        stat2index = {
+        'HP' : 0,
+        'Atk' : 1,
+        'Def' : 2,
+        'SpA' : 3,
+        'SpD' : 4,
+        'Spe' : 5
+        }
+        pos2 = max(setText.rfind(' (F) @ '),setText.rfind(' (F)  \n'))
+        if pos2 > -1:
+            setDict['Gender'] = 'F'
+        else:
+            pos2 = max(setText.rfind(' (M) @ '),setText.rfind(' (M)  \n'))
+            if pos2 > -1:
+                setDict['Gender'] = 'M'
+            else:
+                pos2 = setText.rfind(' @ ')
+                if pos2 == -1:
+                    pos2 = setText.find('  \n')
+        if setText[pos2-1] == ')':
+            pos2 = pos2 - 1;
+            pos1 = pos2 - 1;
+            while setText[pos1] != '(':
+                pos1 = pos1 - 1;
+            pos1 = pos1 + 1;
+            setDict['Nickname'] = setText[:pos1-2]
+        else:
+            pos1 = 0;
+        posItem = setText.find(' @ ',pos2) + 3
+        setDict['Name'] = setText[pos1:pos2]
+        if posItem != -1:
+            setDict['Item'] = setText[posItem:setText.find('  \n')]
+
+        # obtain shiny status
+        posShiny = setText.find('\nShiny: Yes')
+        setDict['Shiny'] = (posShiny > -1)
+        # obtain current moves
+        nlindex = list() # newline indices
+        lenset = len(setText)
+        posMove1 = lenset
+        while setText.rfind('- ',0,posMove1) > -1: 
+            posMove1 = setText.rfind('- ',0,posMove1)
+            posMove2 = setText.find('\n',posMove1)
+            setDict['Moveset'].insert(0,setText[posMove1+2:posMove2-2]) # Extract moves
+        partition = posMove1;
+
+        # obtain current EVs
+        EVindex = list()
+        if setText.find('\nEVs: ') > -1:
+            EVindex.append(setText.find('\nEVs: ')+5)
+            EVindex.append(setText.find('\n',EVindex[0]))
+            EVspaces = [EVindex[0]]
+            while EVspaces[-1] < EVindex[1]-1:
+                EVspaces.append(setText.find(' ',EVspaces[-1]+1))
+            for e in range(0,int(len(EVspaces)/3)):
+                EVs = int(setText[EVspaces[3*e]+1:EVspaces[3*e+1]])
+                stat = setText[EVspaces[3*e+1]+1:EVspaces[3*e+2]]
+                setDict['EVs'][stat2index[stat]] = EVs
+        # obtain current IVs
+        IVindex = list()
+        if setText.find('\nIVs: ') > -1:
+            IVindex.append(setText.find('\nIVs: ')+5)
+            IVindex.append(setText.find('\n',IVindex[0]))
+            IVspaces = [IVindex[0]]
+            while IVspaces[-1] < IVindex[1]-1:
+                IVspaces.append(setText.find(' ',IVspaces[-1]+1))
+            for e in range(0,int(len(IVspaces)/3)):
+                IVs = int(setText[IVspaces[3*e]+1:IVspaces[3*e+1]])
+                stat = setText[IVspaces[3*e+1]+1:IVspaces[3*e+2]]
+                setDict['IVs'][stat2index[stat]] = IVs 
+        # obtain Nature
+        setDict['Nature'] = ''
+        posNature2 = setText.find('Nature  \n') - 1
+        if posNature2 > -1:
+            posNature1 = setText.rfind('\n',0,posNature2) + 1
+            setDict['Nature'] = setText[posNature1:posNature2]
+        # obtain current ability
+        posAbility1 = setText.find('\nAbility: ') + 10
+        posAbility2 = setText.find('\n',posAbility1) - 2
+        setDict['Ability'] = setText[posAbility1:posAbility2]
+        # obtain current level
+        setDict['Level'] = 100
+        if setText.find('\nLevel: ') > -1:
+            posLevel1 = setText.find('\nLevel: ') + 8
+            posLevel2 = setText.find('\n',posLevel1)
+            setDict['Level'] = int(setText[posLevel1:posLevel2])
+        # obtain current happiness
+        setDict['Happiness'] = 255
+        if setText.find('\nHappiness: ') > -1:
+            posHappiness1 = setText.find('\nHappiness: ') + 12
+            posHappiness2 = setText.find('\n',posHappiness1)
+            setDict['Happiness'] = int(setText[posHappiness1:posHappiness2])
+        # obtain current item
+        setDict['Item'] = ''
+        postemp = setText.find(setDict['Name']) + len(setDict['Name'])
+        if setText.find(' @ ',postemp) > -1:
+            posItem1 = setText.find(' @ ',postemp) + 3
+            posItem2 = setText.find('\n',posItem1) - 2
+            setDict['Item'] = setText[posItem1:posItem2]
     return setDict
 
 def PrintSet(setDict,showShiny,showIVs,showNicknames,sortMovesByAlphabetical,sortMovesByDescendingFrequency,sortMovesByAscendingFrequency):
@@ -289,75 +465,144 @@ def PrintSet(setDict,showShiny,showIVs,showNicknames,sortMovesByAlphabetical,sor
         setText += '  \n'
     return setText
 
+### Takes a string s and outputs a number that increases with alphanumeric order
+### set reverse to True if intending to arrange by descending order
+def OrdString(s,reverse):
+    if not reverse:
+        return s
+    ordList = [ord(c) for c in s]
+    reverseOrdList = [chr(1114111-o) for o in ordList]
+    return ''.join(reverseOrdList)
+
+
 analyzeTeams = True
 numTeamsGen = dict()
 foutTemplate = fin[:fin.rfind('.')]
-# foutTemplate = 'convenientName.txt'
+
+## Determine parse format
+f = open(fin)
+line = f.readline()
+inputFormatDense = False
+while line:
+    if line[0:3] == '===':
+        inputFormatDense = False
+        break
+    if line[0:3] == 'gen':
+        inputFormatDense = True
+        break
+    line = f.readline()
+f.close()
 
 if allGenerations:
     generation = list()
     f = open(fin)
     line = f.readline()
-    while line:
-        if line.find('=== [') > -1:
-            if line[0:5] == '=== [' and line[-4:-1] == '===':
-                g = line[5:line.find(']')]
+    if inputFormatDense:
+        while line:
+            if line.find(']') > -1:
+                g = line[0:line.find(']')]
                 if g not in generation:
                     generation.append(g)
-        line = f.readline()
+            line = f.readline()
+    else:
+        while line:
+            if line.find('=== [') > -1:
+                if line[0:5] == '=== [' and line[-4:-1] == '===':
+                    g = line[5:line.find(']')]
+                    if g not in generation:
+                        generation.append(g)
+            line = f.readline()
     f.close()
 
 for gen in generation:
     teamPreview = (int(gen[3]) >= 5)
     setList = list()
     teamList = list()
+    folderCount = {'':1}
     rightGen = False if analyzeTeams else True
     f = open(fin)
     line = f.readline()
-    buffer = line
-    lineStatus = 0; # 0 = importable not found, 1 if found
-    while line:
-        if analyzeTeams:
-            if line.find('===') > -1:
-                if line[0:3] == '===' and line[-4:-1] == '===':
-                    if line.find('[' + gen +  ']') > -1:
-                        # teamList contains (index, name, score)
-                        # teamList.append((len(setList), line[7+len(gen):-5]), 0) 
+    if inputFormatDense:
+        while line:
+            indexVert = line.find('|')
+            indexRight = line.find(']')
+            indexRight2 = line.find(']')
+            if analyzeTeams:
+                if line[0:3] == 'gen':
+                    if line.find(gen + ']') > -1:
                         if len(teamList) > 0:
                             teamList[-1]['Index'][1] = len(setList)
-                        teamList.append({'Index': [len(setList),len(setList)], 'Name': line[7+len(gen):-5], 'Score': [0,0,0,0,0,0]})
-                        rightGen = True
-                    else:
-                        rightGen = False
-                        line = f.readline()
-                        continue
-            elif not rightGen:
-                line = f.readline()
-                continue
+                        teamList.append({'Index': [len(setList),len(setList)], 
+                                         'Name': line[1+len(gen):indexVert], 
+                                         'Folder': '', 
+                                         'Score': [0,0,0,0,0,0]})
+                        if line.find('/') > -1:
+                            teamList[-1]['Folder'] = line[1+len(gen):line.find('/')+1]
+                            if teamList[-1]['Folder'] not in folderCount:
+                                folderCount[teamList[-1]['Folder']] = 1
+                            else:
+                                folderCount[teamList[-1]['Folder']] += 1
+                        indexRight = indexVert # deals with team name delimiter as | instead of ]
+                        while indexRight > -1 and indexRight < len(line)-2:
+                            indexRight2 = line.find(']',indexRight+1)
+                            setList.append(ExtractSet(line[indexRight+1:indexRight2],inputFormatDense)) # also covers index of -1 for \n
+                            indexRight = indexRight2
+            line = f.readline()
+        f.close()
+    else:
+        buffer = line
+        lineStatus = 0; # 0 = importable not found, 1 if found
+        while line:
+            if analyzeTeams:
+                if line.find('===') > -1:
+                    if line[0:3] == '===' and line[-4:-1] == '===':
+                        if line.find('[' + gen +  ']') > -1:
+                            if len(teamList) > 0:
+                                teamList[-1]['Index'][1] = len(setList)
+                            teamList.append({'Index': [len(setList),len(setList)], 
+                                             'Name': line[7+len(gen):-5], 
+                                             'Folder': '', 
+                                             'Score': [0,0,0,0,0,0]})
+                            if line.find('/') > -1:
+                                teamList[-1]['Folder'] = line[7+len(gen):line.find('/')+1]
+                                if teamList[-1]['Folder'] not in folderCount:
+                                    folderCount[teamList[-1]['Folder']] = 1
+                                else:
+                                    folderCount[teamList[-1]['Folder']] += 1
+                            rightGen = True
+                        else:
+                            rightGen = False
+                            line = f.readline()
+                            continue
+                elif not rightGen:
+                    line = f.readline()
+                    continue
 
-        if lineStatus == 0: # If importable has not been found
-            mark = line.find('Ability:') # Use Ability to find importable set
-            if mark == 0: 
-                lineStatus = 1
-                montxt = buffer
-            buffer = line
+            if lineStatus == 0: # If importable has not been found
+                mark = line.find('Ability:') # Use Ability to find importable set
+                if mark == 0: 
+                    lineStatus = 1
+                    montxt = buffer
+                buffer = line
+            if lineStatus == 1: # If importable has been found
+                if line == '\n': # If linebreak has been found
+                    setList.append(ExtractSet(montxt,inputFormatDense)) # Save as a dict
+                    lineStatus = 0
+                else:
+                    montxt = montxt + line # Add remaining importable lines
+            line = f.readline()
+        f.close()
         if lineStatus == 1: # If importable has been found
-            if line == '\n': # If linebreak has been found
-                setList.append(ExtractSet(montxt)) # Save as a dict
-                lineStatus = 0
-            else:
-                montxt = montxt + line # Add remaining importable lines
-        line = f.readline()
-    f.close()
-    if lineStatus == 1: # If importable has been found
-        setList.append(ExtractSet(montxt+'  \n')) # Save as a dict
-        lineStatus = 0
+            setList.append(ExtractSet(montxt+'  \n',inputFormatDense)) # Save as a dict
+            lineStatus = 0
     if analyzeTeams:
         teamList[-1]['Index'][1] = len(setList)
         if len(setList) == teamList[-1]['Index'][0]:
             teamList.pop()
         numTeamsGen[gen] = len(teamList)
-
+    
+    
+    
     ## Find cores and leads
     
     if analyzeTeams:
@@ -654,7 +899,11 @@ for gen in generation:
     ## Print statistics to file
     f = open(foutTemplate + '_' + gen + '_statistics' + '.txt','w')
     totalMons = sum(list(monFrequency.values()))
-    maxNameLen = max([len(s['Name']) for s in setList])
+    if len(setList) > 0:
+        maxNameLen = max([len(s['Name']) for s in setList])
+    else:
+        maxNameLen = 18
+    
     if analyzeTeams:
         if not teamPreview:
             leadFrequencySorted = [(l,leadList[l]) for l in sorted(leadList, key=lambda x:leadList[x], reverse=True)]
@@ -707,16 +956,39 @@ for gen in generation:
     ## Print builder to file by gen
     if analyzeTeams and sortBuilder:
         f = open(foutTemplate + '_' + gen + '_sorted_builder' + '.txt','w')
-        if sortBuilderByAlphabetical or sortBuilderByReverseAlphabetical:
-            if sortBuilderByLead:
-                teamList.sort(key=lambda x:(-coreList[0][(setList[x['Index'][0]]['Name'],)],x['Name']),reverse=sortBuilderByReverseAlphabetical)
-            else:
-                teamList.sort(key=lambda x:x['Name'],reverse=sortBuilderByReverseAlphabetical)
-        elif sortBuilderByCore > 0:
-            if sortBuilderByLead:
-                teamList.sort(key=lambda x:(coreList[0][(setList[x['Index'][0]]['Name'],)],x['Score'][sortBuilderByCore-1]),reverse=True)
-            else:
-                teamList.sort(key=lambda x:x['Score'][sortBuilderByCore-1],reverse=True)
+        if sortFolderByAlphabetical or sortFolderByReverseAlphabetical:
+            if sortTeamsByAlphabetical or sortTeamsByReverseAlphabetical:
+                if sortTeamsByLead:
+                    teamList.sort(key=lambda x:(OrdString(x['Folder'],sortFolderByReverseAlphabetical),-coreList[0][(setList[x['Index'][0]]['Name'],)],OrdString(x['Name'],sortTeamsByReverseAlphabetical)))
+                else:
+                    teamList.sort(key=lambda x:(OrdString(x['Folder'],sortFolderByReverseAlphabetical),Ordstring(x['Name'],sortTeamsByReverseAlphabetical)))
+            elif sortTeamsByCore > 0:
+                if sortTeamsByLead:
+                    teamList.sort(key=lambda x:(OrdString(x['Folder'],sortFolderByReverseAlphabetical),-coreList[0][(setList[x['Index'][0]]['Name'],)],-x['Score'][sortTeamsByCore-1],OrdString(x['Folder'],False)))
+                else:
+                    teamList.sort(key=lambda x:(OrdString(x['Folder'],sortFolderByReverseAlphabetical),-x['Score'][sortTeamsByCore-1],OrdString(x['Folder'],False)))
+        elif sortFolderByFrequency:
+            if sortTeamsByAlphabetical or sortTeamsByReverseAlphabetical:
+                if sortTeamsByLead:
+                    teamList.sort(key=lambda x:(-folderCount[x['Folder']],OrdString(x['Folder'],False),-coreList[0][(setList[x['Index'][0]]['Name'],)],OrdString(x['Name'],sortTeamsByReverseAlphabetical)))
+                else:
+                    teamList.sort(key=lambda x:(-folderCount[x['Folder']],OrdString(x['Folder'],False),OrdString(x['Name'],sortTeamsByReverseAlphabetical)))
+            elif sortTeamsByCore > 0:
+                if sortTeamsByLead:
+                    teamList.sort(key=lambda x:(-folderCount[x['Folder']],OrdString(x['Folder'],False),-coreList[0][(setList[x['Index'][0]]['Name'],)],-x['Score'][sortTeamsByCore-1],OrdString(x['Name'],False)))
+                else:
+                    teamList.sort(key=lambda x:(-folderCount[x['Folder']],OrdString(x['Folder'],False),-x['Score'][sortTeamsByCore-1],OrdString(x['Name'],False)))
+        else:
+            if sortTeamsByAlphabetical or sortTeamsByReverseAlphabetical:
+                if sortTeamsByLead:
+                    teamList.sort(key=lambda x:(-coreList[0][(setList[x['Index'][0]]['Name'],)],OrdString(x['Name'],sortTeamsByReverseAlphabetical)))
+                else:
+                    teamList.sort(key=lambda x:OrdString(x['Name'],sortTeamsByReverseAlphabetical))
+            elif sortTeamsByCore > 0:
+                if sortTeamsByLead:
+                    teamList.sort(key=lambda x:(-coreList[0][(setList[x['Index'][0]]['Name'],)],-x['Score'][sortTeamsByCore-1],OrdString(x['Name'],False)))
+                else:
+                    teamList.sort(key=lambda x:(-x['Score'][sortTeamsByCore-1],OrdString(x['Name'],False)))
         for n in range(len(teamList)):
             f.write('=== [' + gen + '] ')
             f.write(teamList[n]['Name'])

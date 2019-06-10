@@ -1,4 +1,4 @@
-### Written by vapicuno, 2019/06/10 v4
+### Written by vapicuno, 2019/06/11 v5
 ### python 3.5, numpy 1.11.1
 ### Takes in fin which is in showdown teambuilder format
 ### Spits out sets list by gen, builder by gen, stats by gen, and combined builder.  
@@ -11,7 +11,7 @@ import urllib.request
 
 ######## PARAMETERS FOR TUNING TO YOUR LIKING ########
 
-fin = 'test_builder.txt'
+fin = 'linear_builder_v2.txt'
 
 ### DOWNLOAD LATEST POKEDEX
 ## Set to True to download pokedex online, False to use offline copy
@@ -23,6 +23,14 @@ allGenerations = True
 ## If not evaluating all generations (above False), list them below
 ## in the format ['gen1ou','gen2ou',...,gen'7ou']
 generation = ['gen1ou','gen3ou'] 
+
+### UNFINISHED TEAMS
+## Treats teams with larger than this number of anomalies as unfinished
+## Anomalies include missing move, missing EVs, and more severely lacking mons
+## Set to 0 to require full compliance, 999 if not used
+anomalyThreshold = 0
+## Set to true to include incomplete teams in final builder
+includeIncompleteTeams = True
 
 #### SETS PARAMETERS (will only affect sets list, not sorted builder)
 ## Two sets are considered similar if the EV movement is at most this number
@@ -190,6 +198,8 @@ def ExtractSet(setText,inputFormatDense):
             indexAbility1 = pokedexStr.find('"',indexAbility)
             indexAbility2 = pokedexStr.find('"',indexAbility1+1)
             setDict['Ability'] = pokedexStr[indexAbility1+1:indexAbility2]
+        elif parseAbility == 'none': 
+            setDict['Ability'] = 'none'
         else:
             indexAbilityKey = abilitiesStr.find('"'+parseAbility+'": ')
             indexAbility = abilitiesStr.find('name: ',indexAbilityKey)
@@ -474,10 +484,12 @@ def OrdString(s,reverse):
     reverseOrdList = [chr(1114111-o) for o in ordList]
     return ''.join(reverseOrdList)
 
-
 analyzeTeams = True
 numTeamsGen = dict()
 foutTemplate = fin[:fin.rfind('.')]
+
+setListIncomplete = list()
+teamListIncomplete = list()
 
 ## Determine parse format
 f = open(fin)
@@ -522,8 +534,10 @@ for gen in generation:
     rightGen = False if analyzeTeams else True
     f = open(fin)
     line = f.readline()
+    lineCount = 0
     if inputFormatDense:
         while line:
+            lineCount += 1
             indexVert = line.find('|')
             indexRight = line.find(']')
             indexRight2 = line.find(']')
@@ -534,8 +548,11 @@ for gen in generation:
                             teamList[-1]['Index'][1] = len(setList)
                         teamList.append({'Index': [len(setList),len(setList)], 
                                          'Name': line[1+len(gen):indexVert], 
+                                         'Gen': gen,
                                          'Folder': '', 
-                                         'Score': [0,0,0,0,0,0]})
+                                         'Score': [0,0,0,0,0,0],
+                                         'Line': lineCount,
+                                         'Anomalies': 0})
                         if line.find('/') > -1:
                             teamList[-1]['Folder'] = line[1+len(gen):line.find('/')+1]
                             if teamList[-1]['Folder'] not in folderCount:
@@ -553,6 +570,7 @@ for gen in generation:
         buffer = line
         lineStatus = 0; # 0 = importable not found, 1 if found
         while line:
+            lineCount += 1
             if analyzeTeams:
                 if line.find('===') > -1:
                     if line[0:3] == '===' and line[-4:-1] == '===':
@@ -560,9 +578,12 @@ for gen in generation:
                             if len(teamList) > 0:
                                 teamList[-1]['Index'][1] = len(setList)
                             teamList.append({'Index': [len(setList),len(setList)], 
+                                             'Gen': gen,
                                              'Name': line[7+len(gen):-5], 
                                              'Folder': '', 
-                                             'Score': [0,0,0,0,0,0]})
+                                             'Score': [0,0,0,0,0,0],
+                                             'Line': lineCount,
+                                             'Anomalies': 0})
                             if line.find('/') > -1:
                                 teamList[-1]['Folder'] = line[7+len(gen):line.find('/')+1]
                                 if teamList[-1]['Folder'] not in folderCount:
@@ -601,27 +622,47 @@ for gen in generation:
             teamList.pop()
         numTeamsGen[gen] = len(teamList)
     
+    ## Determine if team is complete
     
-    
+    for n in range(len(teamList)):
+        teamList[n]['Anomalies'] = 0
+        if teamList[n]['Index'][1] - teamList[n]['Index'][0] < 6 and gen.find('1v1') == -1:
+            teamList[n]['Anomalies'] += 6
+        for s in setList[teamList[n]['Index'][0]:teamList[n]['Index'][1]]:
+            if int(gen[3]) > 2 and sum(s['EVs']) < 508 - (400/s['Level']):
+                teamList[n]['Anomalies'] += 1
+            if len(s['Moveset']) < 4 and s['Name'] != 'Ditto':
+                teamList[n]['Anomalies'] += 1          
+        # if team is incomplete, copy team to teamListIncomplete and setListIncomplete
+        if teamList[n]['Anomalies'] > anomalyThreshold:
+            teamListIncomplete.append(copy.deepcopy(teamList[n]))
+            teamListIncomplete[-1]['Index'][0] = len(setListIncomplete)
+            setListIncomplete.extend(copy.deepcopy(setList[teamList[n]['Index'][0]:teamList[n]['Index'][1]]))
+            teamListIncomplete[-1]['Index'][1] = len(setListIncomplete)
+        
     ## Find cores and leads
     
     if analyzeTeams:
         coreList = [dict(),dict(),dict(),dict(),dict(),dict()]
         leadList = dict()
         for n in range(len(teamList)):
+            if teamList[n]['Anomalies'] > anomalyThreshold:
+                inc = 0 # increment
+            else:
+                inc = 1
             for p in range(6):
                 core = combinations([s['Name'] for s in setList[teamList[n]['Index'][0]:teamList[n]['Index'][1]]],p+1)
                 for c in core:
                     cSort = tuple(sorted(c))
                     if cSort in coreList[p]:
-                        coreList[p][cSort] += 1
+                        coreList[p][cSort] += inc
                     else:
-                        coreList[p][cSort] = 1
+                        coreList[p][cSort] = inc
             if not teamPreview:
                 if setList[teamList[n]['Index'][0]]['Name'] in leadList:
-                    leadList[setList[teamList[n]['Index'][0]]['Name']] += 1
+                    leadList[setList[teamList[n]['Index'][0]]['Name']] += inc
                 else:
-                    leadList[setList[teamList[n]['Index'][0]]['Name']] = 1
+                    leadList[setList[teamList[n]['Index'][0]]['Name']] = inc
                     
         ## Sort builder
         
@@ -629,6 +670,8 @@ for gen in generation:
             if sortTeamsByMonFrequency:
                 off = 1 - teamPreview
                 for n in range(len(teamList)):
+                    if teamList[n]['Anomalies'] > anomalyThreshold:
+                        continue
                     teamSets = setList[teamList[n]['Index'][0]+off:teamList[n]['Index'][1]]
                     teamSets.sort(key=lambda x:coreList[0][(x['Name'],)])
                     setList[teamList[n]['Index'][0]+off:teamList[n]['Index'][1]] = teamSets
@@ -636,6 +679,8 @@ for gen in generation:
             ## Score the teams
 
             for n in range(len(teamList)):
+                if teamList[n]['Anomalies'] > anomalyThreshold:
+                    continue
                 for p in range(6):
                     core = combinations([s['Name'] for s in setList[teamList[n]['Index'][0]:teamList[n]['Index'][1]]],p+1)
                     numCombinations = 0
@@ -648,7 +693,14 @@ for gen in generation:
 
     ## Aggregates sets by EV equivalence
     
-    setListNameSorted = sorted(copy.deepcopy(setList), key=lambda x:x['Name']); # Alphabetical-sorted list of sets in dict format
+    # Make set list excluding incomplete teams
+    setListComplete = list()
+    for n in range(len(teamList)):
+        if teamList[n]['Anomalies'] > anomalyThreshold:
+            continue
+        setListComplete.extend(setList[teamList[n]['Index'][0]:teamList[n]['Index'][1]])
+    
+    setListNameSorted = sorted(copy.deepcopy(setListComplete), key=lambda x:x['Name']); # Alphabetical-sorted list of sets in dict format
     setListEVcombined = list() # list of dicts of full sets
     chosenMon = '';
     chosenMonIdxEVcombined = 0;
@@ -919,8 +971,6 @@ for gen in generation:
                 f.write('\n')
             f.write('\n')
         for p in range(6):
-            # totalCores = sum(list(coreList[p]))
-            
             coreFrequencySorted = [(c,coreList[p][c]) for c in sorted(coreList[p], key=lambda x:coreList[p][x], reverse=True)]
             if p == 0:
                 f.write('Pokemon Arranged by Frequency\n')
@@ -929,6 +979,8 @@ for gen in generation:
                 f.write(str(p+1) + '-Cores Arranged by Frequency\n')
                 f.write(' Counts | Freq (%) | Cores\n')
             for (core,freq) in coreFrequencySorted:
+                if freq == 0:
+                    continue
                 f.write((7-len(str(freq)))*' ' + str(freq))
                 f.write(' | ')
                 percentStr = "{:.3f}".format(freq/len(teamList)*100)
@@ -990,6 +1042,8 @@ for gen in generation:
                 else:
                     teamList.sort(key=lambda x:(-x['Score'][sortTeamsByCore-1],OrdString(x['Name'],False)))
         for n in range(len(teamList)):
+            if teamList[n]['Anomalies'] > anomalyThreshold:
+                continue
             f.write('=== [' + gen + '] ')
             f.write(teamList[n]['Name'])
             f.write(' ===\n\n')
@@ -1069,6 +1123,19 @@ for gen in generation:
                 f.write('\n')
         f.close()
     
+## Print incomplete teams
+f = open(foutTemplate + '_incomplete' + '.txt','w')
+teamListIncomplete.sort(key=lambda x:x['Line'])
+for n in range(len(teamListIncomplete)):
+    f.write('=== [' + teamListIncomplete[n]['Gen'] + '] ')
+    f.write(teamListIncomplete[n]['Name'])
+    f.write(' ===\n\n')
+    for i in range(teamListIncomplete[n]['Index'][0],teamListIncomplete[n]['Index'][1]):
+        f.write(PrintSet(setListIncomplete[i],True,True,True,False,False,False))
+        f.write('\n')
+    f.write('\n')          
+f.close()
+    
 ## Print entire builder to file
 if analyzeTeams and sortBuilder:
     if sortGenByAlphabetical or sortGenByReverseAlphabetical:
@@ -1076,6 +1143,14 @@ if analyzeTeams and sortBuilder:
     elif sortGenByFrequency:
         generation.sort(key=lambda x:numTeamsGen[x],reverse=True)
     fo = open(foutTemplate + '_full_sorted_builder' + '.txt','w')
+    
+    if includeIncompleteTeams:
+        fi = open(foutTemplate + '_incomplete' + '.txt')
+        line = fi.readline()
+        while line:
+            fo.write(line)
+            line = fi.readline()
+        fi.close()
     for gen in generation:
         fi = open(foutTemplate + '_' + gen + '_sorted_builder' + '.txt') 
         line = fi.readline()

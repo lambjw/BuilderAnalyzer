@@ -11,7 +11,7 @@ import urllib.request
 
 ######## PARAMETERS FOR TUNING TO YOUR LIKING ########
 
-fin = 'linear_builder_v2.txt'
+fin = 'my_builder.txt'
 
 ### DOWNLOAD LATEST POKEDEX
 ## Set to True to download pokedex online, False to use offline copy

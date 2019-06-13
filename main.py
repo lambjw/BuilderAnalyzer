@@ -1,114 +1,61 @@
-### Written by vapicuno, 2019/06/11 v5
-### python 3.5, numpy 1.11.1
+### Written by vapicuno, 2019/06/13 v6
+### python 3.5
 ### Takes in fin which is in showdown teambuilder format
 ### Spits out sets list by gen, builder by gen, stats by gen, and combined builder.  
 ### Sorting order is determined by parameters that can be set
 
-import numpy as np
 from itertools import combinations
 import copy
 import urllib.request
 
 ######## PARAMETERS FOR TUNING TO YOUR LIKING ########
 
+#### --- REPLACE WITH YOUR BUILDER --- ####
 fin = 'my_builder.txt'
 
 ### DOWNLOAD LATEST POKEDEX
-## Set to True to download pokedex online, False to use offline copy
-downloadPokedex = True
+downloadPokedex = False
 
-#### GENERATION PARAMETERS
-## Set to True to evaluate all generations in the builder
+#### METAGAME PARAMETERS
 allGenerations = True
-## If not evaluating all generations (above False), list them below
-## in the format ['gen1ou','gen2ou',...,gen'7ou']
 generation = ['gen1ou','gen3ou'] 
 
 ### UNFINISHED TEAMS
-## Treats teams with larger than this number of anomalies as unfinished
-## Anomalies include missing move, missing EVs, and more severely lacking mons
-## Set to 0 to require full compliance, 999 if not used
 anomalyThreshold = 0
-## Set to true to include incomplete teams in final builder
 includeIncompleteTeams = True
 
 #### SETS PARAMETERS (will only affect sets list, not sorted builder)
-## Two sets are considered similar if the EV movement is at most this number
-## ie. 252HP 0Atk and 212HP 40Atk differ by 40EVs
-## set to 0 if not used
+### --- SET COMBINING
 EVthreshold = 40 
-## Two sets are considered similar if the IVs differ by at most this number
-## ie. 31HP and 0HP differ by 31
-## set to 999 if not used
 IVthreshold = 999 
-## Movesets in the sets compendium will be combined on this number of slots where appropriate
-## set to 1 to combine on up to one slot, 2 for up to two slots
 combineMoves = 2 
-### SET AT MOST ONE OF THREE BELOW to True, set all to False to preserve order
-## Least frequent moves come first.  Useful for visualizing differences between sets (recommended)
+### --- MOVE SORT
 sortMovesByAscendingFrequency = True 
-## Most frequent moves come first.  
 sortMovesByDescendingFrequency = False 
-## Moves ordered from A to Z
 sortMovesByAlphabetical = False 
-## Set to True to show shiny status, otherwise False
+### --- DISPLAY
 showShiny = True
-## Show IVs for most common Hidden Power when HP is a slashed move (may lead to conflicts)
-## set to True to show, False otherwise (False recommended)
 showIVs = False 
-## Set to True to show nicknames, False otherwise
 showNicknames = True
-## Ignore sets of a mon that appear too infrequently (occupy smaller than this fraction of sets)
-## in the format [fraction1, fraction2,...,0]
-## 0 is used as an entry to preserve all sets
 ignoreSetsFraction = [1/8,1/16,1/32,0] 
-## Set to True to show statistics of each set after printing the set, False otherwise
 showStatisticsInSets = True
 
 #### COMBINED BUILDER PARAMETERS
-## Set to True to output a builder
 sortBuilder = True
-### --- GENERATION-SORTING
-### SET AT MOST ONE OF THREE BELOW to True, set all to False to preserve generation order 
-## Set to True to sort across generations by alphanumeric order
-## ie. gen1 appears at top of builder, gen7 at bottom
+### --- METAGAME-SORTING
 sortGenByAlphabetical = False
-## Set to True to sort across generations by reverse alphanumeric order
-## ie. gen7 appears at top of builder, gen1 at bottom
 sortGenByReverseAlphabetical = False
-## Set to True to sort across generations by team frequency
-## ie. gen3ou appears at top of builder if gen3ou has most teams
 sortGenByFrequency = True
 ### --- FOLDER SORTING WITHIN GENERATION
-### SET AT MOST ONE OF THREE BELOW to True, set all to False to preserve generation order 
-## Set to True to sort across folders by alphanumeric order
-## 'final teams' before 'test teams'
 sortFolderByAlphabetical = False
-## Set to True to sort across folders by reverse alphanumeric order
-## 'test teams' before 'final teams'
 sortFolderByReverseAlphabetical = False
-## Set to True to sort across folders by team frequency
-## ie. 'test teams' appear before 'final teams' if test teams has more teams
 sortFolderByFrequency = True
 ### --- TEAM SORTING WITHIN FOLDER
-### SET AT MOST ONE OF THREE BELOW to True, set all to False to preserve team order within generation
-### can be used with sorting by lead
-## Set to True to sort within generations by team name alphanumeric order
-## ie. "MagBalance" appears on top of "MagOffense"
 sortTeamsByAlphabetical = False
-## Set to True to sort within generations by reverse team name alphanumeric order
-## ie. "MagOffense" appears on top of "MagBalance"
 sortTeamsByReverseAlphabetical = False
-## Set to True to sort teams within generations by lead, otherwise False
-sortTeamsByLead = True
-## Set to number of pokemon in core to sort within generations by popularity of Core
-## ie. if = 1, teams with the most popular pokemon come up on top
-## ie. if = 2, and you like using SkarmBliss cores most, then SkarmBliss teams appear on top
-## ie. if = 3, and you like using SkarmBlissZap cores most, then SkarmBlissZap teams appear on top
-sortTeamsByCore = 2
+sortTeamsByLead = False
+sortTeamsByCore = 3
 ### --- POKEMON SORTING WITHIN TEAMS
-## Set to True to sort within teams by Pokemon frequency, otherwise False
-## Leads are preserved for < Gen 5 because of lack of team preview
 sortTeamsByMonFrequency = True
 
 ######## PARAMETERS END HERE ########
@@ -151,8 +98,8 @@ def ExtractSet(setText,inputFormatDense):
     setDict['Nature'] = ''
     setDict['Shiny'] = False
     setDict['Moveset'] = list()
-    setDict['EVs'] = np.zeros(6)
-    setDict['IVs'] = np.zeros(6) + 31
+    setDict['EVs'] = [0,0,0,0,0,0]
+    setDict['IVs'] = [31,31,31,31,31,31]
     setDict['Level'] = 100
     setDict['Happiness'] = 255
     
@@ -419,7 +366,7 @@ def PrintSet(setDict,showShiny,showIVs,showNicknames,sortMovesByAlphabetical,sor
     if setDict['Happiness'] != 255:
         setText += '  \nHappiness: '
         setText += str(int(setDict['Happiness']))
-    if np.sum(setDict['EVs']) > 0:
+    if sum(setDict['EVs']) > 0:
         setText += '  \nEVs: '
         for n in range(6):
             if setDict['EVs'][n] > 0:
@@ -430,7 +377,7 @@ def PrintSet(setDict,showShiny,showIVs,showNicknames,sortMovesByAlphabetical,sor
         setText += '  \n'
         setText += setDict['Nature']
         setText += ' Nature'
-    if np.abs(np.sum(setDict['IVs']) - 31*6) > 0.5:
+    if 31*6 - sum(setDict['IVs']) > 0.5:
         sharedMoves1 = list(setDict['SharedMoves1'].keys())
         sharedMoves2 = list(setDict['SharedMoves2'].keys())
         sharedMoves = sharedMoves1 + sharedMoves2
@@ -483,6 +430,21 @@ def OrdString(s,reverse):
     ordList = [ord(c) for c in s]
     reverseOrdList = [chr(1114111-o) for o in ordList]
     return ''.join(reverseOrdList)
+
+### Takes a list and returns an list of absolute values.  Acts like np.abs
+def AbsList(l):
+    return [abs(i) for i in l]
+
+### Takes two lists and subtracts
+def SubtractLists(l1,l2):
+    if len(l1) != len(l2):
+        print('Error: Lists not same size')
+        return
+    lenl = len(l1)
+    l = list()
+    for n in range(0,lenl):
+        l.append(l1[n]-l2[n])
+    return l
 
 analyzeTeams = True
 numTeamsGen = dict()
@@ -720,8 +682,8 @@ for gen in generation:
                 currentSetDict['Happiness'] == setListEVcombined[nn]['Happiness'] and
                 currentSetDict['Item'] == setListEVcombined[nn]['Item'] and
                 set(currentSetDict['Moveset']) == set(setListEVcombined[nn]['Moveset'])):
-                    if np.sum(np.abs(currentSetDict['EVs'] - setListEVcombined[nn]['EVs'])) <= EVthreshold*2:
-                        if np.sum(np.abs(currentSetDict['IVs'] - setListEVcombined[nn]['IVs'])) <= IVthreshold:
+                    if sum(AbsList(SubtractLists(currentSetDict['EVs'],setListEVcombined[nn]['EVs']))) <= EVthreshold*2:
+                        if sum(AbsList(SubtractLists(currentSetDict['IVs'],setListEVcombined[nn]['IVs']))) <= IVthreshold:
                             matchIndex = nn
                             if currentCount <= setListEVcombined[nn]['SubCountEV']:
                                 setListEVcombined[nn]['CountEV'] += currentCount
@@ -745,7 +707,7 @@ for gen in generation:
             setListEVcombined.append(currentSetDict)
 
     ## Sorting
-    setListEVcombinedRank = np.zeros(len(setListEVcombined))
+    setListEVcombinedRank = [0]*len(setListEVcombined)
     for ii in range(0,len(setListEVcombined)):
         name = setListEVcombined[ii]['Name']
         count = setListEVcombined[ii]['CountEV']
@@ -799,8 +761,8 @@ for gen in generation:
                 currentSetDict['Level'] == setListMoves1Combined[nn]['Level'] and
                 currentSetDict['Happiness'] == setListMoves1Combined[nn]['Happiness'] and
                 currentSetDict['Item'] == setListMoves1Combined[nn]['Item']):
-                    if np.sum(np.abs(currentSetDict['EVs'] - setListMoves1Combined[nn]['EVs'])) <= EVthreshold*2:
-                        if np.sum(np.abs(currentSetDict['IVs'] - setListMoves1Combined[nn]['IVs'])) <= IVthreshold:
+                    if sum(AbsList(SubtractLists(currentSetDict['EVs'],setListMoves1Combined[nn]['EVs']))) <= EVthreshold*2:
+                        if sum(AbsList(SubtractLists(currentSetDict['IVs'],setListMoves1Combined[nn]['IVs']))) <= IVthreshold:
                             # Ensure two movesets are equivalent except for one move
                             moveMatches1 = 0
                             moveMatches2 = 0
@@ -839,7 +801,7 @@ for gen in generation:
             setListMoves1Combined.append(currentSetDict)
 
     ## Sorting
-    setListMoves1CombinedRank = np.zeros(len(setListMoves1Combined))
+    setListMoves1CombinedRank = [0]*len(setListMoves1Combined)
     for ii in range(0,len(setListMoves1Combined)):
         name = setListMoves1Combined[ii]['Name']
         count = setListMoves1Combined[ii]['CountMoves']
@@ -878,8 +840,8 @@ for gen in generation:
                 currentSetDict['Level'] == setListMoves2Combined[nn]['Level'] and
                 currentSetDict['Happiness'] == setListMoves2Combined[nn]['Happiness'] and
                 currentSetDict['Item'] == setListMoves2Combined[nn]['Item']):
-                    if np.sum(np.abs(currentSetDict['EVs'] - setListMoves2Combined[nn]['EVs'])) <= EVthreshold*2:
-                        if np.sum(np.abs(currentSetDict['IVs'] - setListMoves2Combined[nn]['IVs'])) <= IVthreshold:
+                    if sum(AbsList(SubtractLists(currentSetDict['EVs'],setListMoves2Combined[nn]['EVs']))) <= EVthreshold*2:
+                        if sum(AbsList(SubtractLists(currentSetDict['IVs'],setListMoves2Combined[nn]['IVs']))) <= IVthreshold:
                             moveMatches1 = 0
                             moveMatches2 = 0
                             for move in currentSetDict['Moveset']:
@@ -929,7 +891,7 @@ for gen in generation:
             setListMoves2Combined.append(currentSetDict)
 
     ## Sorting
-    setListMoves2CombinedRank = np.zeros(len(setListMoves2Combined))
+    setListMoves2CombinedRank = [0]*len(setListMoves2Combined)
     for ii in range(0,len(setListMoves2Combined)):
         name = setListMoves2Combined[ii]['Name']
         count = setListMoves2Combined[ii]['CountMoves']

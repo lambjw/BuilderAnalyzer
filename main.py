@@ -14,7 +14,7 @@ import urllib.request
 fin = 'my_builder.txt'
 
 ### DOWNLOAD LATEST POKEDEX
-downloadPokedex = False
+downloadPokedex = True
 
 #### METAGAME PARAMETERS
 allGenerations = True
@@ -1121,3 +1121,6 @@ if analyzeTeams and sortBuilder:
             line = fi.readline()
         fi.close()
     fo.close()
+
+print('Processing complete.')
+print('Find your files in the same directory.')

@@ -102,6 +102,7 @@ def ExtractSet(setText,inputFormatDense,pokedexStr,itemsStr,abilitiesStr,movesSt
     setDict['IVs'] = [31,31,31,31,31,31]
     setDict['Level'] = 100
     setDict['Happiness'] = 255
+    setDict['AlternateForm'] = ''
     
     if inputFormatDense:
         indexDelimiter2 = setText.find('|')
@@ -112,17 +113,33 @@ def ExtractSet(setText,inputFormatDense,pokedexStr,itemsStr,abilitiesStr,movesSt
         if indexDelimiter1 + 1 < indexDelimiter2:
             parseName = setText[indexDelimiter1+1:indexDelimiter2]
             indexNameKey = pokedexStr.find(parseName+': ')
-            if indexNameKey == -1:
+            if indexNameKey == -1: # Alternate Form
                 indexNameKey = pokedexStr.find(parseName)
+                if indexNameKey == -1:
+                    print('Warning: Pokemon name not found')
                 indexSpecies = pokedexStr.rfind('species: ',0,indexNameKey)
+                indexNameKeyBase2 = pokedexStr.rfind('{',0,indexSpecies) - 2
+                indexNameKeyBase1 = pokedexStr.rfind('\t',0,indexNameKeyBase2) + 1
+                nameKeyBase = pokedexStr[indexNameKeyBase1:indexNameKeyBase2]
+                # Assume that Alternate Forms are Base Form + '-' + Descriptor
+                setDict['AlternateForm'] = parseName[len(nameKeyBase):].capitalize()
             else:
                 indexSpecies = pokedexStr.find('species: ',indexNameKey)
             indexName1 = pokedexStr.find('"',indexSpecies)
             indexName2 = pokedexStr.find('"',indexName1+1)
             setDict['Name'] = pokedexStr[indexName1+1:indexName2]
+            if setDict['AlternateForm'] != '':
+                setDict['Name'] += '-' + setDict['AlternateForm']
         else:
             setDict['Name'] = setDict['Nickname']
             setDict['Nickname'] = ''
+            indexName1 = pokedexStr.find(setDict['Name'])
+            if indexName1 == -1:
+                indexHyphen = setDict['Name'].find('-')
+                indexName1 = pokedexStr.find('"'+setDict['Name'][0:indexHyphen]+'"')
+                if indexName1 == -1:
+                    print('Warning: Pokemon base form not found')
+                setDict['AlternateForm'] = setDict['Name'][indexHyphen+1:]
             
         indexDelimiter1 = indexDelimiter2
         indexDelimiter2 = setText.find('|', indexDelimiter1+1)
@@ -142,9 +159,18 @@ def ExtractSet(setText,inputFormatDense,pokedexStr,itemsStr,abilitiesStr,movesSt
         if len(parseAbility) <= 1:
             if 'indexNameKey' in locals():
                 indexNameAbilities = indexNameKey
+                if setDict['AlternateForm'] != '':
+                    indexAbilities = pokedexStr.rfind('abilities: ',0,indexNameAbilities)
+                else:
+                    indexAbilities = pokedexStr.find('abilities: ',indexNameAbilities)
             else: 
                 indexNameAbilities = pokedexStr.find('"'+setDict['Name']+'"')
-            indexAbilities = pokedexStr.find('abilities: ',indexNameAbilities)
+                if indexNameAbilities == -1:
+                    indexHyphen = setDict['Name'].find('-')
+                    if indexHyphen == -1:
+                        print('Warning: Pokemon base form not found')
+                    indexNameAbilities = pokedexStr.find('"'+setDict['Name'][0:indexHyphen]+'"')
+                indexAbilities = pokedexStr.find('abilities: ',indexNameAbilities)
             indexAbility = pokedexStr.find(parseAbility+': ',indexAbilities)
             indexAbility1 = pokedexStr.find('"',indexAbility)
             indexAbility2 = pokedexStr.find('"',indexAbility1+1)
@@ -168,6 +194,9 @@ def ExtractSet(setText,inputFormatDense,pokedexStr,itemsStr,abilitiesStr,movesSt
                     indexMove2 = indexDelimiter2
                 parseMove = setText[indexMove1+1:indexMove2]
                 indexMoveKey = movesStr.find('"'+parseMove+'": ')
+                if indexMoveKey == -1:
+                    indexMove1 = indexMove2
+                    continue
                 indexMoveName = movesStr.find('name: ',indexMoveKey)
                 indexMoveName1 = movesStr.find('"',indexMoveName)
                 indexMoveName2 = movesStr.find('"',indexMoveName1+1)

@@ -112,6 +112,10 @@ def ExtractSet(setText,inputFormatDense,pokedexStr,itemsStr,abilitiesStr,movesSt
         if indexDelimiter1 + 1 < indexDelimiter2:
             parseName = setText[indexDelimiter1+1:indexDelimiter2]
             indexNameKey = pokedexStr.find(parseName+': ')
+            if indexNameKey == -1:
+                indexNameKey = pokedexStr.find(parseName)
+                indexSpecies = pokedexStr.rfind('species: ',0,indexNameKey)
+            else:
             indexSpecies = pokedexStr.find('species: ',indexNameKey)
             indexName1 = pokedexStr.find('"',indexSpecies)
             indexName2 = pokedexStr.find('"',indexName1+1)

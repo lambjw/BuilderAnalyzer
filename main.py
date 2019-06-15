@@ -11,7 +11,7 @@ import urllib.request
 ######## PARAMETERS FOR TUNING TO YOUR LIKING ########
 
 #### --- REPLACE WITH YOUR BUILDER --- ####
-fin = 'test17_builder.txt'
+fin = 'my_builder.txt'
 
 ### DOWNLOAD LATEST POKEDEX
 downloadPokedex = True
@@ -53,7 +53,7 @@ sortFolderByFrequency = True
 ### --- TEAM SORTING WITHIN FOLDER
 sortTeamsByAlphabetical = False
 sortTeamsByReverseAlphabetical = False
-sortTeamsByLead = True
+sortTeamsByLead = False
 sortTeamsByCore = 2
 ### --- POKEMON SORTING WITHIN TEAMS
 sortTeamsByMonFrequency = True
@@ -1125,3 +1125,6 @@ if analyzeTeams and sortBuilder:
             line = fi.readline()
         fi.close()
     fo.close()
+
+print('Processing complete.')
+print('Find your files in the same directory.')

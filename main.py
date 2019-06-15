@@ -116,7 +116,7 @@ def ExtractSet(setText,inputFormatDense,pokedexStr,itemsStr,abilitiesStr,movesSt
                 indexNameKey = pokedexStr.find(parseName)
                 indexSpecies = pokedexStr.rfind('species: ',0,indexNameKey)
             else:
-            indexSpecies = pokedexStr.find('species: ',indexNameKey)
+                indexSpecies = pokedexStr.find('species: ',indexNameKey)
             indexName1 = pokedexStr.find('"',indexSpecies)
             indexName2 = pokedexStr.find('"',indexName1+1)
             setDict['Name'] = pokedexStr[indexName1+1:indexName2]

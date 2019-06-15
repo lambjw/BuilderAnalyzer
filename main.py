@@ -11,7 +11,7 @@ import urllib.request
 ######## PARAMETERS FOR TUNING TO YOUR LIKING ########
 
 #### --- REPLACE WITH YOUR BUILDER --- ####
-fin = 'my_builder.txt'
+fin = 'test17_builder.txt'
 
 ### DOWNLOAD LATEST POKEDEX
 downloadPokedex = True
@@ -53,8 +53,8 @@ sortFolderByFrequency = True
 ### --- TEAM SORTING WITHIN FOLDER
 sortTeamsByAlphabetical = False
 sortTeamsByReverseAlphabetical = False
-sortTeamsByLead = False
-sortTeamsByCore = 3
+sortTeamsByLead = True
+sortTeamsByCore = 2
 ### --- POKEMON SORTING WITHIN TEAMS
 sortTeamsByMonFrequency = True
 
@@ -85,7 +85,7 @@ abilitiesFile = open('abilities.js')
 abilitiesStr = abilitiesFile.read()
 
 ## Extracts set from text and puts it into a dict
-def ExtractSet(setText,inputFormatDense):
+def ExtractSet(setText,inputFormatDense,pokedexStr,itemsStr,abilitiesStr,movesStr):
     setDict = {}
     # for statistics
     setDict['SharedMoves1'] = dict()
@@ -177,7 +177,7 @@ def ExtractSet(setText,inputFormatDense):
         
         indexDelimiter1 = indexDelimiter2
         indexDelimiter2 = setText.find('|', indexDelimiter1+1)
-        if indexDelimiter1 + 1 < indexDelimiter2:
+        if indexDelimiter1 + 2 < indexDelimiter2: # 2 takes into account sometimes storing 0 EVs as single 0
             indexEV1 = indexDelimiter1
             for n in range(0,6):
                 if n < 5:
@@ -524,7 +524,7 @@ for gen in generation:
                         indexRight = indexVert # deals with team name delimiter as | instead of ]
                         while indexRight > -1 and indexRight < len(line)-2:
                             indexRight2 = line.find(']',indexRight+1)
-                            setList.append(ExtractSet(line[indexRight+1:indexRight2],inputFormatDense)) # also covers index of -1 for \n
+                            setList.append(ExtractSet(line[indexRight+1:indexRight2],inputFormatDense,pokedexStr,itemsStr,abilitiesStr,movesStr)) # also covers index of -1 for \n
                             indexRight = indexRight2
             line = f.readline()
         f.close()
@@ -563,20 +563,24 @@ for gen in generation:
 
             if lineStatus == 0: # If importable has not been found
                 mark = line.find('Ability:') # Use Ability to find importable set
+                if mark == -1:
+                    mark = line.find('-')
+                if buffer == '\n':
+                    mark == -1
                 if mark == 0: 
                     lineStatus = 1
                     montxt = buffer
                 buffer = line
             if lineStatus == 1: # If importable has been found
                 if line == '\n': # If linebreak has been found
-                    setList.append(ExtractSet(montxt,inputFormatDense)) # Save as a dict
+                    setList.append(ExtractSet(montxt,inputFormatDense,pokedexStr,itemsStr,abilitiesStr,movesStr)) # Save as a dict
                     lineStatus = 0
                 else:
                     montxt = montxt + line # Add remaining importable lines
             line = f.readline()
         f.close()
         if lineStatus == 1: # If importable has been found
-            setList.append(ExtractSet(montxt+'  \n',inputFormatDense)) # Save as a dict
+            setList.append(ExtractSet(montxt+'  \n',inputFormatDense,pokedexStr,itemsStr,abilitiesStr,movesStr)) # Save as a dict
             lineStatus = 0
     if analyzeTeams:
         teamList[-1]['Index'][1] = len(setList)
@@ -1121,6 +1125,3 @@ if analyzeTeams and sortBuilder:
             line = fi.readline()
         fi.close()
     fo.close()
-
-print('Processing complete.')
-print('Find your files in the same directory.')

@@ -564,6 +564,18 @@ for gen in generation:
             if lineStatus == 0: # If importable has not been found
                 mark = line.find('Ability:') # Use Ability to find importable set
                 if mark == -1:
+                    mark = line.find('Level: ')
+                if mark == -1:
+                    mark = line.find('Shiny: ')
+                if mark == -1:
+                    mark = line.find('EVs: ')
+                if mark == -1:
+                    mark = line.find('Nature  \n')
+                    if mark > -1:
+                        mark = 0
+                if mark == -1:
+                    mark = line.find('IVs: ')
+                if mark == -1:
                     mark = line.find('-')
                 if buffer == '\n':
                     mark == -1

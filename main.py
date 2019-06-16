@@ -7,6 +7,7 @@
 from itertools import combinations
 import copy
 import urllib.request
+import json
 
 ######## PARAMETERS FOR TUNING TO YOUR LIKING ########
 
@@ -18,7 +19,7 @@ downloadPokedex = True
 
 #### METAGAME PARAMETERS
 allGenerations = True
-generation = ['gen1ou','gen3ou'] 
+generation = ['gen1ou','gen3ou','gen7ou'] 
 
 ### UNFINISHED TEAMS
 anomalyThreshold = 0
@@ -57,6 +58,8 @@ sortTeamsByLead = False
 sortTeamsByCore = 2
 ### --- POKEMON SORTING WITHIN TEAMS
 sortTeamsByMonFrequency = True
+sortTeamsByColor = False
+gamma = 1
 
 ######## PARAMETERS END HERE ########
 
@@ -83,6 +86,10 @@ movesFile = open('moves.js')
 movesStr = movesFile.read()
 abilitiesFile = open('abilities.js')
 abilitiesStr = abilitiesFile.read()
+if sortTeamsByColor:
+    colorsFile = open('colors.js')
+    colorsStr = colorsFile.read()
+    colors = json.loads(colorsStr)
 
 ## Extracts set from text and puts it into a dict
 def ExtractSet(setText,inputFormatDense,pokedexStr,itemsStr,abilitiesStr,movesStr):
@@ -678,15 +685,46 @@ for gen in generation:
         ## Sort builder
         
         if sortBuilder:
-            if sortTeamsByMonFrequency:
+            if sortTeamsByMonFrequency or sortTeamsByColor:
                 off = 1 - teamPreview
+                def DominantHue(s,gamma,colors,hueOffset):
+                    if s['Name'] in colors:
+                        colorDict = colors[s['Name']]
+                        numColors = len(colorDict['Counts'])
+                        weights = [colorDict['Counts'][i]*(colorDict['HSV'][i][1]+colorDict['HSV'][i][2])**gamma for i in range(0,numColors)]
+                        dominantIndex = weights.index(max(weights))
+                        return (colorDict['HSV'][dominantIndex][0] - hueOffset) % 1.0
+                    else:
+                        return 0
+                def SetSortKey(x):
+                    keyList = list()
+                    if sortTeamsByMonFrequency:
+                        keyList.append(-coreList[0][(x['Name'],)])
+                    if sortTeamsByColor:
+                        keyList.append(DominantHue(x,gamma,colors,hueOffset))
+                    return tuple(keyList)
                 for n in range(len(teamList)):
                     if teamList[n]['Anomalies'] > anomalyThreshold:
                         continue
-                    teamSets = setList[teamList[n]['Index'][0]+off:teamList[n]['Index'][1]]
-                    teamSets.sort(key=lambda x:coreList[0][(x['Name'],)])
+                    teamSets = setList[teamList[n]['Index'][0]+off:teamList[n]['Index'][1]] 
+                    if sortTeamsByColor:
+                        hueOffset = 0
+                        if off == 0:
+                            dominantHueList = [DominantHue(s,gamma,colors,hueOffset) for s in teamSets]
+                            dominantHueList.sort()
+                            dominantHueDifferenceList = []
+                            for i in range(0,len(dominantHueList)-1):
+                                dominantHueDifferenceList.append(dominantHueList[i+1] - dominantHueList[i])
+                            dominantHueDifferenceList.append(1 + dominantHueList[0] - dominantHueList[-1])
+                            indexMaxHueDiff = dominantHueDifferenceList.index(max(dominantHueDifferenceList))
+                            hueOffset = (dominantHueList[indexMaxHueDiff] + dominantHueDifferenceList[indexMaxHueDiff]/2) % 1.0
+                        elif off == 1:
+                            hueOffset = (DominantHue(setList[teamList[n]['Index'][0]],gamma,colors,hueOffset) - 0.1) % 1.0
+
+                    teamSets.sort(key=SetSortKey)
                     setList[teamList[n]['Index'][0]+off:teamList[n]['Index'][1]] = teamSets
-                
+                    hueOffset = 0
+                    
             ## Score the teams
 
             for n in range(len(teamList)):
@@ -1019,6 +1057,7 @@ for gen in generation:
     ## Print builder to file by gen
     if analyzeTeams and sortBuilder:
         f = open(foutTemplate + '_' + gen + '_sorted_builder' + '.txt','w')
+        
         ## Define sort key
         def SortKey(x):
             keyList = list()
@@ -1027,7 +1066,7 @@ for gen in generation:
                     keyList.append(-folderCount[x['Folder']])
                 keyList.append(OrdString(x['Folder'],sortFolderByReverseAlphabetical))
             
-            if sortTeamsByLead or soreTeamsByCore > 0 or sortTeamsByAlphabetical or sortTeamsByReverseAlphabetical:
+            if sortTeamsByLead or sortTeamsByCore > 0 or sortTeamsByAlphabetical or sortTeamsByReverseAlphabetical:
                 if sortTeamsByLead:
                     keyList.append(-coreList[0][(setList[x['Index'][0]]['Name'],)])
                 if sortTeamsByCore > 0:

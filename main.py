@@ -1020,7 +1020,7 @@ for gen in generation:
     if analyzeTeams and sortBuilder:
         f = open(foutTemplate + '_' + gen + '_sorted_builder' + '.txt','w')
         ## Define sort key
-        def sortKey(x):
+        def SortKey(x):
             keyList = list()
             if sortFolderByFrequency or sortFolderByAlphabetical or sortFolderByReverseAlphabetical:
                 if sortFolderByFrequency:
@@ -1035,7 +1035,7 @@ for gen in generation:
                 keyList.append(OrdString(x['Name'],sortTeamsByReverseAlphabetical))
             return tuple(keyList)
         
-        teamList.sort(key=sortKey)
+        teamList.sort(key=SortKey)
         
         for n in range(len(teamList)):
             if teamList[n]['Anomalies'] > anomalyThreshold:

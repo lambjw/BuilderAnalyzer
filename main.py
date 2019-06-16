@@ -1019,39 +1019,24 @@ for gen in generation:
     ## Print builder to file by gen
     if analyzeTeams and sortBuilder:
         f = open(foutTemplate + '_' + gen + '_sorted_builder' + '.txt','w')
-        if sortFolderByAlphabetical or sortFolderByReverseAlphabetical:
-            if sortTeamsByAlphabetical or sortTeamsByReverseAlphabetical:
+        ## Define sort key
+        def sortKey(x):
+            keyList = list()
+            if sortFolderByFrequency or sortFolderByAlphabetical or sortFolderByReverseAlphabetical:
+                if sortFolderByFrequency:
+                    keyList.append(-folderCount[x['Folder']])
+                keyList.append(OrdString(x['Folder'],sortFolderByReverseAlphabetical))
+            
+            if sortTeamsByLead or soreTeamsByCore > 0 or sortTeamsByAlphabetical or sortTeamsByReverseAlphabetical:
                 if sortTeamsByLead:
-                    teamList.sort(key=lambda x:(OrdString(x['Folder'],sortFolderByReverseAlphabetical),-coreList[0][(setList[x['Index'][0]]['Name'],)],OrdString(x['Name'],sortTeamsByReverseAlphabetical)))
-                else:
-                    teamList.sort(key=lambda x:(OrdString(x['Folder'],sortFolderByReverseAlphabetical),Ordstring(x['Name'],sortTeamsByReverseAlphabetical)))
-            elif sortTeamsByCore > 0:
-                if sortTeamsByLead:
-                    teamList.sort(key=lambda x:(OrdString(x['Folder'],sortFolderByReverseAlphabetical),-coreList[0][(setList[x['Index'][0]]['Name'],)],-x['Score'][sortTeamsByCore-1],OrdString(x['Folder'],False)))
-                else:
-                    teamList.sort(key=lambda x:(OrdString(x['Folder'],sortFolderByReverseAlphabetical),-x['Score'][sortTeamsByCore-1],OrdString(x['Folder'],False)))
-        elif sortFolderByFrequency:
-            if sortTeamsByAlphabetical or sortTeamsByReverseAlphabetical:
-                if sortTeamsByLead:
-                    teamList.sort(key=lambda x:(-folderCount[x['Folder']],OrdString(x['Folder'],False),-coreList[0][(setList[x['Index'][0]]['Name'],)],OrdString(x['Name'],sortTeamsByReverseAlphabetical)))
-                else:
-                    teamList.sort(key=lambda x:(-folderCount[x['Folder']],OrdString(x['Folder'],False),OrdString(x['Name'],sortTeamsByReverseAlphabetical)))
-            elif sortTeamsByCore > 0:
-                if sortTeamsByLead:
-                    teamList.sort(key=lambda x:(-folderCount[x['Folder']],OrdString(x['Folder'],False),-coreList[0][(setList[x['Index'][0]]['Name'],)],-x['Score'][sortTeamsByCore-1],OrdString(x['Name'],False)))
-                else:
-                    teamList.sort(key=lambda x:(-folderCount[x['Folder']],OrdString(x['Folder'],False),-x['Score'][sortTeamsByCore-1],OrdString(x['Name'],False)))
-        else:
-            if sortTeamsByAlphabetical or sortTeamsByReverseAlphabetical:
-                if sortTeamsByLead:
-                    teamList.sort(key=lambda x:(-coreList[0][(setList[x['Index'][0]]['Name'],)],OrdString(x['Name'],sortTeamsByReverseAlphabetical)))
-                else:
-                    teamList.sort(key=lambda x:OrdString(x['Name'],sortTeamsByReverseAlphabetical))
-            elif sortTeamsByCore > 0:
-                if sortTeamsByLead:
-                    teamList.sort(key=lambda x:(-coreList[0][(setList[x['Index'][0]]['Name'],)],-x['Score'][sortTeamsByCore-1],OrdString(x['Name'],False)))
-                else:
-                    teamList.sort(key=lambda x:(-x['Score'][sortTeamsByCore-1],OrdString(x['Name'],False)))
+                    keyList.append(-coreList[0][(setList[x['Index'][0]]['Name'],)])
+                if sortTeamsByCore > 0:
+                    keyList.append(-x['Score'][sortTeamsByCore-1])
+                keyList.append(OrdString(x['Name'],sortTeamsByReverseAlphabetical))
+            return tuple(keyList)
+        
+        teamList.sort(key=sortKey)
+        
         for n in range(len(teamList)):
             if teamList[n]['Anomalies'] > anomalyThreshold:
                 continue

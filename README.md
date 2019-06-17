@@ -21,15 +21,16 @@ If you want only to process specific metagames, make ```allGenerations = False``
 ```EVthreshold```: Two sets are considered similar if the EV movement is at most this number, ie. 252HP 0Atk and 212HP 40Atk differ by 40EVs.  Set to 0 to distinguish all sets.  
 ```IVthreshold```: Two sets are considered similar if the IVs differ by at most this number, ie. 31HP and 0HP differ by 31.  Set to 999 to ignore IV differences (recommended)
 ```combineMoves``` is the number of combined moveslots.  Set to 2 to combine on two moveslots (default).  To distinguish all sets, set to 0.  
-```sortMovesByAscendingFrequency, sortMovesByDescendingFrequency, sortMovesByAlphabetical``` tell if/how you want the moves sorted.  Choose at most one to set to True.  To leave moves in original order, set to False.  
+```sortMovesByFrequency, sortMovesByAlphabetical``` tell if/how you want the moves sorted.  A value of 1,-1, or 0 means sort in increasing order, decreasing order, or don't sort.  Choose at most one to set to nonzero.  
 ```showShiny, showIVs, showNicknames``` describe how you want the sets displayed.  ```showIVs``` is recommended to be false due to possible slashed moves conflict.  
 ```ignoreSetsFraction``` filters the lowest fraction of these sets away.  ```ignoreSetsFraction = [1/8,1/16,1/32,0]``` removes the least-used 1/8, 1/16, 1/32 sets of each pokemon and writes the sets compendium to different files.  Zero removes no sets.  
 ```showStatisticsInSets``` displays statistics of set usage if set to True (default)
 ### Step 6: Builder sort
 ```sortBuilder``` set to True (default) if you want to receive a sorted builder
-```sortGenByAlphabetical, sortGenByReverseAlphabetical, sortGenByFrequency``` tell how you want the metagames sorted.  Choose at most one to set to True.  
-```sortFolderByAlphabetical, sortFolderByReverseAlphabetical, sortFolderByFrequency``` tell if/how you want the folders sorted.  Choose at most one to set to True.  Set to False to leave folder order irrelvant.  
-```sortTeamsByAlphabetical, sortTeamsByReverseAlphabetical, sortTeamsByLead``` tell how you want the teams sorted.  Choose at most one to set to True.  
-If alphabetical sort is not used, then ```sortTeamsByCore``` will sort the builder by usage stats of this core number.  In other words, ```sortTeamsByCore = 2``` will sort teams by usage stats of pairs of pokemon.  
-```sortTeamsByMonFrequency``` sorts within the team by individual mon usage if set to True
+```sortGenByAlphabetical, sortGenByFrequency``` tell how you want the metagames sorted.  A value of 1,-1, or 0 means sort in increasing order, decreasing order, or don't sort.  Choose at most one to set to nonzero.  
+```sortFolderByFrequency, sortFolderByAlphabetical``` tell if/how you want the folders sorted.  A value of 1,-1, or 0 means sort in increasing order, decreasing order, or don't sort.  Choose at most one to set to nonzero.  
+```sortTeamsByLeadFrequency, sortTeamsByCore, sortTeamsByAlphabetical``` tell how you want the teams sorted.  Choose at most one to set to True.  A value of 1,-1, or 0 means sort in increasing order, decreasing order, or don't sort.  Sorting priority is top to bottom: sort by lead first, then core, then alphabetical.  
+```coreNumber``` determines the number of pokemons in core if ```sortTeamsByCore``` is 1 or -1.  In other words, ```sortTeamsByCore = 2``` will sort teams by usage stats of pairs of pokemon.  
+```sortMonsByFrequency``` sorts within the team by individual mon usage.  A value of 1,-1, or 0 means sort in increasing order, decreasing order, or don't sort.  
+```sortMonsByColor``` sorts the team according to colors of the rainbow.  Set to True or False.  
 

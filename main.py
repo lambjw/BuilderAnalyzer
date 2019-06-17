@@ -52,7 +52,7 @@ sortFolderByAlphabetical = 0
 sortTeamsByLeadFrequency = 0
 sortTeamsByCore = -1
 sortTeamsByAlphabetical = 0
-coreNumber = 1
+coreNumber = 2
 ### --- POKEMON SORTING WITHIN TEAMS
 sortMonsByFrequency = -1
 sortMonsByColor = False

@@ -12,10 +12,10 @@ import json
 ######## PARAMETERS FOR TUNING TO YOUR LIKING ########
 
 #### --- REPLACE WITH YOUR BUILDER --- ####
-fin = 'gen7ourmt2.txt'
+fin = 'gen7lcrmt2.txt'
 
 ### DOWNLOAD LATEST POKEDEX
-downloadPokedex = False
+downloadPokedex = True
 
 #### METAGAME PARAMETERS
 allGenerations = True
@@ -46,16 +46,16 @@ sortBuilder = True
 ### --- METAGAME-SORTING
 sortGenByAlphabetical = False
 sortGenByReverseAlphabetical = False
-sortGenByFrequency = True
+sortGenByFrequency = False
 ### --- FOLDER SORTING WITHIN GENERATION
 sortFolderByAlphabetical = False
 sortFolderByReverseAlphabetical = False
-sortFolderByFrequency = True
+sortFolderByFrequency = False
 ### --- TEAM SORTING WITHIN FOLDER
 sortTeamsByAlphabetical = False
 sortTeamsByReverseAlphabetical = False
-sortTeamsByLead = True
-sortTeamsByCore = 2
+sortTeamsByLead = False
+sortTeamsByCore = 1
 ### --- POKEMON SORTING WITHIN TEAMS
 sortTeamsByMonFrequency = False
 sortTeamsByColor = True
@@ -123,7 +123,7 @@ def ExtractSet(setText,inputFormatDense,pokedexStr,itemsStr,abilitiesStr,movesSt
             if indexNameKey == -1: # Alternate Form
                 indexNameKey = pokedexStr.find(parseName)
                 if indexNameKey == -1:
-                    print('Warning: Pokemon name of ' + parseName + ' not found')
+                    print('Warning: Pokemon name of '.encode('utf-8') + parseName.encode('utf-8','ignore') + ' not found'.encode('utf-8'))
                 indexSpecies = pokedexStr.rfind('species: ',0,indexNameKey)
                 indexNameKeyBase2 = pokedexStr.rfind('{',0,indexSpecies) - 2
                 indexNameKeyBase1 = pokedexStr.rfind('\t',0,indexNameKeyBase2) + 1
@@ -145,7 +145,7 @@ def ExtractSet(setText,inputFormatDense,pokedexStr,itemsStr,abilitiesStr,movesSt
                 indexHyphen = setDict['Name'].find('-')
                 indexName1 = pokedexStr.find('"'+setDict['Name'][0:indexHyphen]+'"')
                 if indexName1 == -1:
-                    print('Warning: Pokemon base form of ' + setDict['Name'] + ' not found')
+                    print('Warning: Pokemon base form of '.encode('utf-8') + setDict['Name'].encode('utf-8','ignore') + ' not found'.encode('utf-8'))
                 setDict['AlternateForm'] = setDict['Name'][indexHyphen+1:]
             
         indexDelimiter1 = indexDelimiter2
@@ -175,7 +175,7 @@ def ExtractSet(setText,inputFormatDense,pokedexStr,itemsStr,abilitiesStr,movesSt
                 if indexNameAbilities == -1:
                     indexHyphen = setDict['Name'].find('-')
                     if indexHyphen == -1:
-                        print('Warning: Pokemon base form not found')
+                        print('Warning: Pokemon base form of '.encode('utf-8') + setDict['Name'].encode('utf-8','ignore') + ' not found'.encode('utf-8'))
                     indexNameAbilities = pokedexStr.find('"'+setDict['Name'][0:indexHyphen]+'"')
                 indexAbilities = pokedexStr.find('abilities: ',indexNameAbilities)
             indexAbility = pokedexStr.find(parseAbility+': ',indexAbilities)
@@ -502,7 +502,7 @@ setListIncomplete = list()
 teamListIncomplete = list()
 
 ## Determine parse format
-f = open(fin)
+f = open(fin, encoding='utf-8', errors='ignore')
 line = f.readline()
 inputFormatDense = False
 while line:
@@ -517,7 +517,7 @@ f.close()
 
 if allGenerations:
     generation = list()
-    f = open(fin)
+    f = open(fin, encoding='utf-8', errors='ignore')
     line = f.readline()
     if inputFormatDense:
         while line:
@@ -542,7 +542,7 @@ for gen in generation:
     teamList = list()
     folderCount = {'':1}
     rightGen = False if analyzeTeams else True
-    f = open(fin)
+    f = open(fin, encoding='utf-8', errors='ignore')
     line = f.readline()
     lineCount = 0
     if inputFormatDense:
@@ -1007,7 +1007,7 @@ for gen in generation:
     setListMoves2Sorted = [setListMoves2Combined[i[0]] for i in sorted(enumerate(setListMoves2CombinedRank), key=lambda x:x[1])]
 
     ## Print statistics to file
-    f = open(foutTemplate + '_' + gen + '_statistics' + '.txt','w')
+    f = open(foutTemplate + '_' + gen + '_statistics' + '.txt','w',encoding='utf-8', errors='ignore')
     totalMons = sum(list(monFrequency.values()))
     if len(setList) > 0:
         maxNameLen = max([len(s['Name']) for s in setList])
@@ -1065,7 +1065,7 @@ for gen in generation:
 
     ## Print builder to file by gen
     if analyzeTeams and sortBuilder:
-        f = open(foutTemplate + '_' + gen + '_sorted_builder' + '.txt','w')
+        f = open(foutTemplate + '_' + gen + '_sorted_builder' + '.txt','w',encoding='utf-8', errors='ignore')
         
         ## Define sort key
         def SortKey(x):
@@ -1102,7 +1102,7 @@ for gen in generation:
             fout = foutTemplate + '_' + gen + '_sets' + '.txt'
         else:
             fout = foutTemplate + '_' + gen + '_sets' + '_cut_' + str(int(1/fracThreshold)) +'.txt'
-        f = open(fout,'w')
+        f = open(fout,'w',encoding='utf-8', errors='ignore')
         f.write('Built from ' + foutTemplate + '.txt\n')
         f.write('-'*50 + '\n')
         f.write('Fraction of sets ignored: ')
@@ -1168,7 +1168,7 @@ for gen in generation:
         f.close()
     
 ## Print incomplete teams
-f = open(foutTemplate + '_incomplete' + '.txt','w')
+f = open(foutTemplate + '_incomplete' + '.txt','w',encoding='utf-8', errors='ignore')
 teamListIncomplete.sort(key=lambda x:x['Line'])
 for n in range(len(teamListIncomplete)):
     f.write('=== [' + teamListIncomplete[n]['Gen'] + '] ')
@@ -1186,17 +1186,17 @@ if analyzeTeams and sortBuilder:
         generation.sort(reverse=sortGenByReverseAlphabetical)
     elif sortGenByFrequency:
         generation.sort(key=lambda x:numTeamsGen[x],reverse=True)
-    fo = open(foutTemplate + '_full_sorted_builder' + '.txt','w')
+    fo = open(foutTemplate + '_full_sorted_builder' + '.txt','w',encoding='utf-8', errors='ignore')
     
     if includeIncompleteTeams:
-        fi = open(foutTemplate + '_incomplete' + '.txt')
+        fi = open(foutTemplate + '_incomplete' + '.txt',encoding='utf-8', errors='ignore')
         line = fi.readline()
         while line:
             fo.write(line)
             line = fi.readline()
         fi.close()
     for gen in generation:
-        fi = open(foutTemplate + '_' + gen + '_sorted_builder' + '.txt') 
+        fi = open(foutTemplate + '_' + gen + '_sorted_builder' + '.txt', encoding='utf-8', errors='ignore') 
         line = fi.readline()
         while line:
             fo.write(line)

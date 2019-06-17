@@ -12,10 +12,10 @@ import json
 ######## PARAMETERS FOR TUNING TO YOUR LIKING ########
 
 #### --- REPLACE WITH YOUR BUILDER --- ####
-fin = 'my_builder.txt'
+fin = 'gen7ourmt2.txt'
 
 ### DOWNLOAD LATEST POKEDEX
-downloadPokedex = True
+downloadPokedex = False
 
 #### METAGAME PARAMETERS
 allGenerations = True
@@ -54,11 +54,11 @@ sortFolderByFrequency = True
 ### --- TEAM SORTING WITHIN FOLDER
 sortTeamsByAlphabetical = False
 sortTeamsByReverseAlphabetical = False
-sortTeamsByLead = False
+sortTeamsByLead = True
 sortTeamsByCore = 2
 ### --- POKEMON SORTING WITHIN TEAMS
-sortTeamsByMonFrequency = True
-sortTeamsByColor = False
+sortTeamsByMonFrequency = False
+sortTeamsByColor = True
 gamma = 1
 
 ######## PARAMETERS END HERE ########
@@ -123,7 +123,7 @@ def ExtractSet(setText,inputFormatDense,pokedexStr,itemsStr,abilitiesStr,movesSt
             if indexNameKey == -1: # Alternate Form
                 indexNameKey = pokedexStr.find(parseName)
                 if indexNameKey == -1:
-                    print('Warning: Pokemon name not found')
+                    print('Warning: Pokemon name of ' + parseName + ' not found')
                 indexSpecies = pokedexStr.rfind('species: ',0,indexNameKey)
                 indexNameKeyBase2 = pokedexStr.rfind('{',0,indexSpecies) - 2
                 indexNameKeyBase1 = pokedexStr.rfind('\t',0,indexNameKeyBase2) + 1
@@ -145,7 +145,7 @@ def ExtractSet(setText,inputFormatDense,pokedexStr,itemsStr,abilitiesStr,movesSt
                 indexHyphen = setDict['Name'].find('-')
                 indexName1 = pokedexStr.find('"'+setDict['Name'][0:indexHyphen]+'"')
                 if indexName1 == -1:
-                    print('Warning: Pokemon base form not found')
+                    print('Warning: Pokemon base form of ' + setDict['Name'] + ' not found')
                 setDict['AlternateForm'] = setDict['Name'][indexHyphen+1:]
             
         indexDelimiter1 = indexDelimiter2
@@ -186,10 +186,13 @@ def ExtractSet(setText,inputFormatDense,pokedexStr,itemsStr,abilitiesStr,movesSt
             setDict['Ability'] = 'none'
         else:
             indexAbilityKey = abilitiesStr.find('"'+parseAbility+'": ')
-            indexAbility = abilitiesStr.find('name: ',indexAbilityKey)
-            indexAbility1 = abilitiesStr.find('"',indexAbility)
-            indexAbility2 = abilitiesStr.find('"',indexAbility1+1)
-            setDict['Ability'] = abilitiesStr[indexAbility1+1:indexAbility2]
+            if indexAbilityKey == -1:
+                setDict['Ability'] = parseAbility
+            else:
+                indexAbility = abilitiesStr.find('name: ',indexAbilityKey)
+                indexAbility1 = abilitiesStr.find('"',indexAbility)
+                indexAbility2 = abilitiesStr.find('"',indexAbility1+1)
+                setDict['Ability'] = abilitiesStr[indexAbility1+1:indexAbility2]
         
         indexDelimiter1 = indexDelimiter2
         indexDelimiter2 = setText.find('|', indexDelimiter1+1)
@@ -373,7 +376,7 @@ def ExtractSet(setText,inputFormatDense,pokedexStr,itemsStr,abilitiesStr,movesSt
             setDict['Item'] = setText[posItem1:posItem2]
     return setDict
 
-def PrintSet(setDict,showShiny,showIVs,showNicknames,sortMovesByAlphabetical,sortMovesByDescendingFrequency,sortMovesByAscendingFrequency):
+def PrintSet(setDict,moveFrequency,showShiny,showIVs,showNicknames,sortMovesByAlphabetical,sortMovesByDescendingFrequency,sortMovesByAscendingFrequency):
     index2stat = {
     0 : 'HP',
     1 : 'Atk',
@@ -434,12 +437,17 @@ def PrintSet(setDict,showShiny,showIVs,showNicknames,sortMovesByAlphabetical,sor
                 setText = setText[:-3]
     setText += '  \n'
     moveList = list(setDict['Moveset'])
+    def safeMoveFrequency(name,move,moveFrequency):
+        if name in moveFrequency:
+            if move in moveFrequency[name]:
+                return moveFrequency[name][move]
+        return 0
     if sortMovesByAlphabetical:
         moveList.sort()
     if sortMovesByDescendingFrequency:
-        moveList.sort(key=lambda k:moveFrequency[setDict['Name']][k], reverse=True)
+        moveList.sort(key=lambda k:safeMoveFrequency(setDict['Name'],k,moveFrequency), reverse=True)
     if sortMovesByAscendingFrequency:
-        moveList.sort(key=lambda k:moveFrequency[setDict['Name']][k])
+        moveList.sort(key=lambda k:safeMoveFrequency(setDict['Name'],k,moveFrequency))
     for m in moveList:
         if m in setDict['SharedMoves2']:
             moves2 = list(setDict['SharedMoves2'].keys())
@@ -828,6 +836,7 @@ for gen in generation:
             else:
                 moveFrequency[setListEVsorted[ii]['Name']][m] += setListEVsorted[ii]['CountEV']
 
+    len(setListEVsorted)
     ## Aggregates sets by move equivalence up to one slot
 
     setListMoves1Combined = list() # list of dicts of full sets
@@ -1083,7 +1092,7 @@ for gen in generation:
             f.write(teamList[n]['Name'])
             f.write(' ===\n\n')
             for i in range(teamList[n]['Index'][0],teamList[n]['Index'][1]):
-                f.write(PrintSet(setList[i],True,True,True,sortMovesByAlphabetical,sortMovesByDescendingFrequency,sortMovesByAscendingFrequency))
+                f.write(PrintSet(setList[i],moveFrequency,True,True,True,sortMovesByAlphabetical,sortMovesByDescendingFrequency,sortMovesByAscendingFrequency))
                 f.write('\n')
             f.write('\n')          
 
@@ -1136,7 +1145,7 @@ for gen in generation:
         for s in setListMoves2Sorted:
             frac = s['CountMoves']/monFrequency[s['Name']]
             if frac >= fracThreshold:
-                f.write(PrintSet(s,showShiny,showIVs,showNicknames,sortMovesByAlphabetical,sortMovesByDescendingFrequency,sortMovesByAscendingFrequency))
+                f.write(PrintSet(s,moveFrequency,showShiny,showIVs,showNicknames,sortMovesByAlphabetical,sortMovesByDescendingFrequency,sortMovesByAscendingFrequency))
                 if showStatisticsInSets:                
                     f.write('-'*28 + '\n')
                     if bool(s['SharedMoves1']) or bool(s['SharedMoves2']):
@@ -1166,7 +1175,7 @@ for n in range(len(teamListIncomplete)):
     f.write(teamListIncomplete[n]['Name'])
     f.write(' ===\n\n')
     for i in range(teamListIncomplete[n]['Index'][0],teamListIncomplete[n]['Index'][1]):
-        f.write(PrintSet(setListIncomplete[i],True,True,True,False,False,False))
+        f.write(PrintSet(setListIncomplete[i],moveFrequency,True,True,True,False,False,False))
         f.write('\n')
     f.write('\n')          
 f.close()

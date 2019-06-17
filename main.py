@@ -49,13 +49,13 @@ sortGenByAlphabetical = 0
 sortFolderByFrequency = -1
 sortFolderByAlphabetical = 0
 ### --- TEAM SORTING WITHIN FOLDER
-sortTeamsByLeadFrequency = -1
+sortTeamsByLeadFrequency = 0
 sortTeamsByCore = -1
 sortTeamsByAlphabetical = 0
-coreNumber = 2
+coreNumber = 1
 ### --- POKEMON SORTING WITHIN TEAMS
-sortMonsByFrequency = 0
-sortMonsByColor = True
+sortMonsByFrequency = -1
+sortMonsByColor = False
 gamma = 1
 
 ######## PARAMETERS END HERE ########

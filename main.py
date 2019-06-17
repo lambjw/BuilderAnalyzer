@@ -49,7 +49,8 @@ sortGenByAlphabetical = 0
 sortFolderByFrequency = -1
 sortFolderByAlphabetical = 0
 ### --- TEAM SORTING WITHIN FOLDER
-sortTeamsByLeadFrequency = 0
+sortTeamsByLeadFrequencyTeamPreview = 0
+sortTeamsByLeadFrequencyNoTeamPreview = -1
 sortTeamsByCore = -1
 sortTeamsByAlphabetical = 0
 coreNumber = 2
@@ -1064,7 +1065,7 @@ for gen in generation:
     ## Print builder to file by gen
     if analyzeTeams and sortBuilder:
         f = open(foutTemplate + '_' + gen + '_sorted_builder' + '.txt','w',encoding='utf-8', errors='ignore')
-        
+        sortTeamsByLeadFrequency = sortTeamsByLeadFrequencyTeamPreview if teamPreview else sortTeamsByLeadFrequencyNoTeamPreview
         ## Define sort key
         def SortKey(x):
             keyList = list()

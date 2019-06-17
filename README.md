@@ -16,7 +16,7 @@ Note: In Python, True and False are case sensitive boolean values, so remember t
 If you want only to process specific metagames, make ```allGenerations = False``` and list them out in ```generation```
 ### Step 4: What counts as an incomplete team?  
 ```anomalyThreshold``` is a number that describes how unfinished a team is by looking at remaining EVs, missing moves and missing pokemon.  Set to 0 for strictest, allowing no missed moves and at most 4 EVs lost (80 EVs for LC) (default).  Set to 999 to include all teams regardless of completion.  
-```includeIncompleteTeams``` places incomplete teams at the top of the builder if set to True (default)
+```includeIncompleteTeams``` places incomplete teams at the top of the builder if set to True (default), otherwise it removes them completely.  
 ### Step 5: Sets compendium
 ```EVthreshold```: Two sets are considered similar if the EV movement is at most this number, ie. 252HP 0Atk and 212HP 40Atk differ by 40EVs.  Set to 0 to distinguish all sets.  
 ```IVthreshold```: Two sets are considered similar if the IVs differ by at most this number, ie. 31HP and 0HP differ by 31.  Set to 999 to ignore IV differences (recommended)

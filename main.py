@@ -31,9 +31,8 @@ EVthreshold = 40
 IVthreshold = 999 
 combineMoves = 2 
 ### --- MOVE SORT
-sortMovesByAscendingFrequency = True 
-sortMovesByDescendingFrequency = False 
-sortMovesByAlphabetical = False 
+sortMovesByFrequency = -1
+sortMovesByAlphabetical = 0
 ### --- DISPLAY
 showShiny = True
 showIVs = False 
@@ -44,21 +43,19 @@ showStatisticsInSets = True
 #### COMBINED BUILDER PARAMETERS
 sortBuilder = True
 ### --- METAGAME-SORTING
-sortGenByAlphabetical = False
-sortGenByReverseAlphabetical = False
-sortGenByFrequency = False
+sortGenByFrequency = -1
+sortGenByAlphabetical = 0
 ### --- FOLDER SORTING WITHIN GENERATION
-sortFolderByAlphabetical = False
-sortFolderByReverseAlphabetical = False
-sortFolderByFrequency = False
+sortFolderByFrequency = -1
+sortFolderByAlphabetical = 0
 ### --- TEAM SORTING WITHIN FOLDER
-sortTeamsByAlphabetical = False
-sortTeamsByReverseAlphabetical = False
-sortTeamsByLead = False
-sortTeamsByCore = 1
+sortTeamsByLeadFrequency = -1
+sortTeamsByCore = -1
+sortTeamsByAlphabetical = 0
+coreNumber = 2
 ### --- POKEMON SORTING WITHIN TEAMS
-sortTeamsByMonFrequency = False
-sortTeamsByColor = True
+sortMonsByFrequency = 0
+sortMonsByColor = True
 gamma = 1
 
 ######## PARAMETERS END HERE ########
@@ -86,7 +83,7 @@ movesFile = open('moves.js')
 movesStr = movesFile.read()
 abilitiesFile = open('abilities.js')
 abilitiesStr = abilitiesFile.read()
-if sortTeamsByColor:
+if sortMonsByColor:
     colorsFile = open('colors.js')
     colorsStr = colorsFile.read()
     colors = json.loads(colorsStr)
@@ -376,7 +373,7 @@ def ExtractSet(setText,inputFormatDense,pokedexStr,itemsStr,abilitiesStr,movesSt
             setDict['Item'] = setText[posItem1:posItem2]
     return setDict
 
-def PrintSet(setDict,moveFrequency,showShiny,showIVs,showNicknames,sortMovesByAlphabetical,sortMovesByDescendingFrequency,sortMovesByAscendingFrequency):
+def PrintSet(setDict,moveFrequency,showShiny,showIVs,showNicknames,sortMovesByAlphabetical,sortMovesByFrequency):
     index2stat = {
     0 : 'HP',
     1 : 'Atk',
@@ -442,12 +439,10 @@ def PrintSet(setDict,moveFrequency,showShiny,showIVs,showNicknames,sortMovesByAl
             if move in moveFrequency[name]:
                 return moveFrequency[name][move]
         return 0
-    if sortMovesByAlphabetical:
-        moveList.sort()
-    if sortMovesByDescendingFrequency:
-        moveList.sort(key=lambda k:safeMoveFrequency(setDict['Name'],k,moveFrequency), reverse=True)
-    if sortMovesByAscendingFrequency:
-        moveList.sort(key=lambda k:safeMoveFrequency(setDict['Name'],k,moveFrequency))
+    if sortMovesByAlphabetical != 0:
+        moveList.sort(reverse=ToBool(sortMovesByAlphabetical))
+    if sortMovesByFrequency != 0:
+        moveList.sort(key=lambda k:safeMoveFrequency(setDict['Name'],k,moveFrequency), reverse=ToBool(sortMovesByFrequency))
     for m in moveList:
         if m in setDict['SharedMoves2']:
             moves2 = list(setDict['SharedMoves2'].keys())
@@ -493,6 +488,9 @@ def SubtractLists(l1,l2):
     for n in range(0,lenl):
         l.append(l1[n]-l2[n])
     return l
+
+def ToBool(n):
+    return bool(n-1)
 
 analyzeTeams = True
 numTeamsGen = dict()
@@ -693,7 +691,7 @@ for gen in generation:
         ## Sort builder
         
         if sortBuilder:
-            if sortTeamsByMonFrequency or sortTeamsByColor:
+            if sortMonsByFrequency != 0 or sortMonsByColor:
                 off = 1 - teamPreview
                 def DominantHue(s,gamma,colors,hueOffset):
                     if s['Name'] in colors:
@@ -706,16 +704,16 @@ for gen in generation:
                         return 0
                 def SetSortKey(x):
                     keyList = list()
-                    if sortTeamsByMonFrequency:
-                        keyList.append(-coreList[0][(x['Name'],)])
-                    if sortTeamsByColor:
+                    if sortMonsByFrequency != 0:
+                        keyList.append(sortMonsByFrequency*coreList[0][(x['Name'],)])
+                    if sortMonsByColor:
                         keyList.append(DominantHue(x,gamma,colors,hueOffset))
                     return tuple(keyList)
                 for n in range(len(teamList)):
                     if teamList[n]['Anomalies'] > anomalyThreshold:
                         continue
                     teamSets = setList[teamList[n]['Index'][0]+off:teamList[n]['Index'][1]] 
-                    if sortTeamsByColor:
+                    if sortMonsByColor:
                         hueOffset = 0
                         if off == 0:
                             dominantHueList = [DominantHue(s,gamma,colors,hueOffset) for s in teamSets]
@@ -1070,17 +1068,23 @@ for gen in generation:
         ## Define sort key
         def SortKey(x):
             keyList = list()
-            if sortFolderByFrequency or sortFolderByAlphabetical or sortFolderByReverseAlphabetical:
-                if sortFolderByFrequency:
-                    keyList.append(-folderCount[x['Folder']])
-                keyList.append(OrdString(x['Folder'],sortFolderByReverseAlphabetical))
+            if sortFolderByFrequency != 0 or sortFolderByAlphabetical != 0:
+                if sortFolderByFrequency != 0:
+                    keyList.append(sortFolderByFrequency*folderCount[x['Folder']])
+                keyList.append(OrdString(x['Folder'].casefold(),ToBool(sortFolderByAlphabetical)))
             
-            if sortTeamsByLead or sortTeamsByCore > 0 or sortTeamsByAlphabetical or sortTeamsByReverseAlphabetical:
-                if sortTeamsByLead:
-                    keyList.append(-coreList[0][(setList[x['Index'][0]]['Name'],)])
-                if sortTeamsByCore > 0:
-                    keyList.append(-x['Score'][sortTeamsByCore-1])
-                keyList.append(OrdString(x['Name'],sortTeamsByReverseAlphabetical))
+            if sortTeamsByLeadFrequency != 0 or sortTeamsByCore != 0 or sortTeamsByAlphabetical != 0:
+                if sortTeamsByLeadFrequency != 0:
+                    if teamPreview:
+                        keyList.append(sortTeamsByLeadFrequency*coreList[0][(setList[x['Index'][0]]['Name'],)])
+                    else:
+                        keyList.append(sortTeamsByLeadFrequency*leadList[setList[x['Index'][0]]['Name']])
+                    keyList.append(OrdString(setList[x['Index'][0]]['Name'],False))
+                if sortTeamsByCore != 0:
+                    keyList.append(sortTeamsByCore*x['Score'][coreNumber-1])
+                    keyList.append(OrdString(setList[x['Index'][0]]['Name'],False))
+                if sortTeamsByAlphabetical != 0:
+                    keyList.append(OrdString(x['Name'].casefold(),ToBool(sortTeamsByAlphabetical)))
             return tuple(keyList)
         
         teamList.sort(key=SortKey)
@@ -1092,7 +1096,7 @@ for gen in generation:
             f.write(teamList[n]['Name'])
             f.write(' ===\n\n')
             for i in range(teamList[n]['Index'][0],teamList[n]['Index'][1]):
-                f.write(PrintSet(setList[i],moveFrequency,True,True,True,sortMovesByAlphabetical,sortMovesByDescendingFrequency,sortMovesByAscendingFrequency))
+                f.write(PrintSet(setList[i],moveFrequency,True,True,True,sortMovesByAlphabetical,sortMovesByFrequency))
                 f.write('\n')
             f.write('\n')          
 
@@ -1120,12 +1124,14 @@ for gen in generation:
         f.write('\n')
         f.write('Moveslots combined: ' + str(combineMoves) + '\n')
         f.write('Move Sort Order: ')
-        if sortMovesByAscendingFrequency:
+        if sortMovesByFrequency == 1:
             f.write('Increasing Frequency')
-        elif sortMovesByDescendingFrequency:
+        elif sortMovesByFrequency == -1:
             f.write('Decreasing Frequency')
-        elif sortMovesByAlphabetical:
-            f.write('Alphabetical')
+        elif sortMovesByAlphabetical == 1:
+            f.write('Increasing Alphabetical')
+        elif sortMovesByAlphabetical == -1:
+            f.write('Decreasing Alphabetical')
         else:
             f.write('Retained From Import')
         f.write('\n')
@@ -1145,7 +1151,7 @@ for gen in generation:
         for s in setListMoves2Sorted:
             frac = s['CountMoves']/monFrequency[s['Name']]
             if frac >= fracThreshold:
-                f.write(PrintSet(s,moveFrequency,showShiny,showIVs,showNicknames,sortMovesByAlphabetical,sortMovesByDescendingFrequency,sortMovesByAscendingFrequency))
+                f.write(PrintSet(s,moveFrequency,showShiny,showIVs,showNicknames,sortMovesByAlphabetical,sortMovesByFrequency))
                 if showStatisticsInSets:                
                     f.write('-'*28 + '\n')
                     if bool(s['SharedMoves1']) or bool(s['SharedMoves2']):
@@ -1175,17 +1181,17 @@ for n in range(len(teamListIncomplete)):
     f.write(teamListIncomplete[n]['Name'])
     f.write(' ===\n\n')
     for i in range(teamListIncomplete[n]['Index'][0],teamListIncomplete[n]['Index'][1]):
-        f.write(PrintSet(setListIncomplete[i],moveFrequency,True,True,True,False,False,False))
+        f.write(PrintSet(setListIncomplete[i],moveFrequency,True,True,True,0,0))
         f.write('\n')
     f.write('\n')          
 f.close()
     
 ## Print entire builder to file
 if analyzeTeams and sortBuilder:
-    if sortGenByAlphabetical or sortGenByReverseAlphabetical:
-        generation.sort(reverse=sortGenByReverseAlphabetical)
-    elif sortGenByFrequency:
-        generation.sort(key=lambda x:numTeamsGen[x],reverse=True)
+    if sortGenByFrequency != 0:
+        generation.sort(key=lambda x:numTeamsGen[x],reverse=ToBool(sortGenByFrequency))
+    elif sortGenByAlphabetical != 0:
+        generation.sort(reverse=ToBool(sortGenByAlphabetical))
     fo = open(foutTemplate + '_full_sorted_builder' + '.txt','w',encoding='utf-8', errors='ignore')
     
     if includeIncompleteTeams:

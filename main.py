@@ -12,7 +12,7 @@ import json
 ######## PARAMETERS FOR TUNING TO YOUR LIKING ########
 
 #### --- REPLACE WITH YOUR BUILDER --- ####
-fin = 'gen7lcrmt2.txt'
+fin = 'my_builder.txt'
 
 ### DOWNLOAD LATEST POKEDEX
 downloadPokedex = True

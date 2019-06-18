@@ -649,12 +649,18 @@ for gen in generation:
     
     ## Determine if team is complete
     
+    if gen.find('1v1') > 0:
+        maxMons = 1
+    elif gen.find('metronome') > 0:
+        maxMons = 2
+    else:
+        maxMons = 6
     for n in range(len(teamList)):
         teamList[n]['Anomalies'] = 0
-        if teamList[n]['Index'][1] - teamList[n]['Index'][0] < 6 and gen.find('1v1') == -1:
+        if teamList[n]['Index'][1] - teamList[n]['Index'][0] < maxMons:
             teamList[n]['Anomalies'] += 6
         for s in setList[teamList[n]['Index'][0]:teamList[n]['Index'][1]]:
-            if int(gen[3]) > 2 and sum(s['EVs']) < 508 - (400/s['Level']):
+            if int(gen[3]) > 2 and sum(s['EVs']) < 508 - (400/s['Level']) and gen.find('letsgo') == -1:
                 teamList[n]['Anomalies'] += 1
             if len(s['Moveset']) < 4 and s['Name'] != 'Ditto':
                 teamList[n]['Anomalies'] += 1          

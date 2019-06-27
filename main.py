@@ -8,11 +8,12 @@ from itertools import combinations
 import copy
 import urllib.request
 import json
+import math
 
 ######## PARAMETERS FOR TUNING TO YOUR LIKING ########
 
 #### --- REPLACE WITH YOUR BUILDER --- ####
-fin = 'my_builder.txt'
+fin = 'da_adv_ou.txt'
 
 ### DOWNLOAD LATEST POKEDEX
 downloadPokedex = True
@@ -39,6 +40,9 @@ showIVs = False
 showNicknames = True
 ignoreSetsFraction = [1/8,1/16,1/32,0] 
 showStatisticsInSets = True
+
+#### STATISTICS PARAMETERS
+usageWeight = 1.5
 
 #### COMBINED BUILDER PARAMETERS
 sortBuilder = True
@@ -675,6 +679,8 @@ for gen in generation:
     
     if analyzeTeams:
         coreList = [dict(),dict(),dict(),dict(),dict(),dict()]
+        coreCount = [0]*6
+        multiplicity = [0]*6
         leadList = dict()
         for n in range(len(teamList)):
             if teamList[n]['Anomalies'] > anomalyThreshold:
@@ -694,7 +700,21 @@ for gen in generation:
                     leadList[setList[teamList[n]['Index'][0]]['Name']] += inc
                 else:
                     leadList[setList[teamList[n]['Index'][0]]['Name']] = inc
-                    
+        for p in range(6):
+            coreCount[p] = sum(coreList[p].values())
+            multiplicity[p] = math.factorial(p+1)
+        ## Calculate multivariate pointwise mutual information 
+        mpmiList = [dict(),dict(),dict(),dict(),dict(),dict()]
+        for p in range(6):
+            for c in coreList[p]:
+                mpmiList[p][c] = 0;
+                for q in range(p+1):
+                    for d in combinations(c,q+1):
+                        if coreList[q][d] != 0:
+                            # sign convention: positive if synergetic
+                            mpmiList[p][c] += (-1)**(q) * (-math.log(coreList[q][d]/coreCount[q]/multiplicity[q],2))
+                        else:
+                            mpmiList[p][c] = 0
         ## Sort builder
         
         if sortBuilder:
@@ -753,7 +773,7 @@ for gen in generation:
                     teamList[n]['Score'][p] = teamList[n]['Score'][p] / len(teamList) # / numCombinations
                         
 
-    ## Aggregates sets by EV equivalence
+    ## Extracts finished sets
     
     # Make set list excluding incomplete teams
     setListComplete = list()
@@ -763,10 +783,48 @@ for gen in generation:
         setListComplete.extend(setList[teamList[n]['Index'][0]:teamList[n]['Index'][1]])
     
     setListNameSorted = sorted(copy.deepcopy(setListComplete), key=lambda x:x['Name']); # Alphabetical-sorted list of sets in dict format
+    setListLen = len(setListNameSorted)
+
+    ## Categorize sets for synergy analysis
+    # Aggregate by Item or EVs, then store moves
+    categoryDict = dict()
+    
+    for n in range(setListLen):
+        currentSetDict = setListNameSorted[n]
+        if currentSetDict['Name'] not in categoryDict:
+            categoryDict[currentSetDict['Name']] = dict()
+            categoryDict[currentSetDict['Name']]['Count'] = 0
+        categoryDict[currentSetDict['Name']]['Count'] += 1
+        # define first category
+        if currentSetDict['Item'] in importantItems:
+            category1 = currentSetDict['Item']
+        else:
+            currentEVs = copy.deepcopy(currentSetDict['EVs'])
+            highestEVIndex1 = currentEVs.find(max(currentEVs))
+            tempEVs = copy.deepcopy(currentEVs)
+            del tempEVs[highestEVIndex1]
+            highestEVIndex2 = tempEVs.find(max(tempEVs))
+            if highestEVIndex2 >= highestEVIndex1:
+                highestEVIndex2 += 1
+            category1 = [highestEVIndex1,highestEVIndex2]
+        if category1 not in categoryDict[currentSetDict['Name']]:
+            categoryDict[currentSetDict['Name']][category1] = dict()
+            categoryDict[currentSetDict['Name']][category1]['Count'] = 0
+        categoryDict[currentSetDict['Name']][category1]['Count'] += 1
+        for m in currentSetDict['Moveset']:
+            if m not in categoryDict[currentSetDict['Name']][category1]:
+                categoryDict[currentSetDict['Name']][category1][m] = 0
+            categoryDict[currentSetDict['Name']][category1][m] += 1
+    for mon in categoryDict:
+        
+
+
+
+    ## Aggregates sets by EV equivalence
+
     setListEVcombined = list() # list of dicts of full sets
     chosenMon = '';
     chosenMonIdxEVcombined = 0;
-    setListLen = len(setListNameSorted)
     for n in range(setListLen):
         currentSetDict = setListNameSorted[n]
         currentCount = 1
@@ -790,8 +848,8 @@ for gen in generation:
                             else:
                                 setListEVcombined[nn]['CountEV'] += currentCount
                                 setListEVcombined[nn]['SubCountEV'] = currentCount
-                                setListEVcombined[nn]['EVs'] = currentEVs
-                                setListEVcombined[nn]['IVs'] = currentIVs
+                                setListEVcombined[nn]['EVs'] = currentSetDict['EVs'],
+                                setListEVcombined[nn]['IVs'] = currentSetDict['IVs'],
                                 setListEVcombined[nn]['Index'] = n
             else:
                 chosenMonIdxEVcombined = len(setListEVcombined)
@@ -836,7 +894,7 @@ for gen in generation:
         else:
             monFrequency[setListEVsorted[ii]['Name']] += setListEVsorted[ii]['CountEV']
         for m in setListEVsorted[ii]['Moveset']:
-            if not (m in  moveFrequency[setListEVsorted[ii]['Name']]):
+            if not (m in moveFrequency[setListEVsorted[ii]['Name']]):
                 moveFrequency[setListEVsorted[ii]['Name']][m] = setListEVsorted[ii]['CountEV']
             else:
                 moveFrequency[setListEVsorted[ii]['Name']][m] += setListEVsorted[ii]['CountEV']
@@ -1011,62 +1069,73 @@ for gen in generation:
         setListMoves2CombinedRank[ii] = (frontIdent1*2**24 + frontIdent2*2**16 + backIdent1*2**8 + backIdent2)*2**10 - count
     setListMoves2Sorted = [setListMoves2Combined[i[0]] for i in sorted(enumerate(setListMoves2CombinedRank), key=lambda x:x[1])]
 
+
+
     ## Print statistics to file
-    f = open(foutTemplate + '_' + gen + '_statistics' + '.txt','w',encoding='utf-8', errors='ignore')
+    f1 = open(foutTemplate + '_' + gen + '_usage_statistics' + '.txt','w',encoding='utf-8', errors='ignore')
+    f2 = open(foutTemplate + '_' + gen + '_synergy_statistics' + '.txt','w',encoding='utf-8', errors='ignore')
     totalMons = sum(list(monFrequency.values()))
     if len(setList) > 0:
         maxNameLen = max([len(s['Name']) for s in setList])
     else:
         maxNameLen = 18
     
-    if analyzeTeams:
-        if not teamPreview:
-            leadFrequencySorted = [(l,leadList[l]) for l in sorted(leadList, key=lambda x:leadList[x], reverse=True)]
-            f.write('Team Lead Arranged by Frequency\n')
-            f.write(' Counts | Freq (%) | Lead\n')
-            for (lead,freq) in leadFrequencySorted:
+    for f in [f1,f2]:
+        if analyzeTeams:
+            if not teamPreview:
+                leadFrequencySorted = [(l,leadList[l]) for l in sorted(leadList, key=lambda x:leadList[x], reverse=True)]
+                f.write('Team Lead Arranged by Frequency\n')
+                f.write(' Counts | Freq (%) | Lead\n')
+                for (lead,freq) in leadFrequencySorted:
+                    f.write((7-len(str(freq)))*' ' + str(freq))
+                    f.write(' | ')
+                    percentStr = "{:.3f}".format(freq/len(teamList)*100)
+                    f.write((8-len(percentStr))*' ' + percentStr)
+                    f.write(' | ')
+                    f.write(' '*(maxNameLen-len(lead)) + lead)
+                    f.write('\n')
+                f.write('\n')
+            for p in range(6):
+                if f == f1:
+                    coreFrequencySorted = [(c,coreList[p][c]) for c in sorted(coreList[p], key=lambda x:coreList[p][x], reverse=True)]
+                elif f == f2:
+                    coreFrequencySorted = [(c,coreList[p][c]) for c in sorted(coreList[p], key=lambda x:coreList[p][x]**usageWeight*mpmiList[p][x], reverse=True)]
+                if p == 0:
+                    f.write('Pokemon Arranged by Frequency\n')
+                    f.write(' Counts | Freq (%) | Pokemon\n')
+                else:
+                    f.write(str(p+1) + '-Cores Arranged by Frequency\n')
+                    f.write(' Counts | Freq (%) | Synergy | Cores\n')
+                for (core,freq) in coreFrequencySorted:
+                    if freq == 0:
+                        continue
+                    f.write((7-len(str(freq)))*' ' + str(freq))
+                    f.write(' | ')
+                    percentStr = "{:.3f}".format(freq/len(teamList)*100)
+                    f.write((8-len(percentStr))*' ' + percentStr)
+                    f.write(' | ')
+                    if p > 0:
+                        mpmiStr = "{:.2f}".format(mpmiList[p][core])
+                        f.write((7-len(mpmiStr))*' ' + mpmiStr)
+                        f.write(' | ')
+                    for q in range(p):
+                        f.write(' '*(maxNameLen-len(core[q])) + core[q])
+                        f.write(', ')
+                    f.write(' '*(maxNameLen-len(core[p])) + core[p])
+                    f.write('\n')
+                f.write('\n')
+        else: 
+            monFrequencySorted = [(mon,monFrequency[mon]) for mon in sorted(monFrequency, key=lambda x:monFrequency[x], reverse=True)]
+            f.write('Pokemon Arranged by Frequency\n')
+            f.write(' Counts | Freq (%) | Pokemon\n')
+            for (mon,freq) in monFrequencySorted:
                 f.write((7-len(str(freq)))*' ' + str(freq))
                 f.write(' | ')
-                percentStr = "{:.3f}".format(freq/len(teamList)*100)
+                percentStr = "{:.3f}".format(freq/totalMons*100)
                 f.write((8-len(percentStr))*' ' + percentStr)
                 f.write(' | ')
-                f.write(' '*(maxNameLen-len(lead)) + lead)
+                f.write(mon)
                 f.write('\n')
-            f.write('\n')
-        for p in range(6):
-            coreFrequencySorted = [(c,coreList[p][c]) for c in sorted(coreList[p], key=lambda x:coreList[p][x], reverse=True)]
-            if p == 0:
-                f.write('Pokemon Arranged by Frequency\n')
-                f.write(' Counts | Freq (%) | Pokemon\n')
-            else:
-                f.write(str(p+1) + '-Cores Arranged by Frequency\n')
-                f.write(' Counts | Freq (%) | Cores\n')
-            for (core,freq) in coreFrequencySorted:
-                if freq == 0:
-                    continue
-                f.write((7-len(str(freq)))*' ' + str(freq))
-                f.write(' | ')
-                percentStr = "{:.3f}".format(freq/len(teamList)*100)
-                f.write((8-len(percentStr))*' ' + percentStr)
-                f.write(' | ')
-                for q in range(p):
-                    f.write(' '*(maxNameLen-len(core[q])) + core[q])
-                    f.write(', ')
-                f.write(' '*(maxNameLen-len(core[p])) + core[p])
-                f.write('\n')
-            f.write('\n')
-    else: 
-        monFrequencySorted = [(mon,monFrequency[mon]) for mon in sorted(monFrequency, key=lambda x:monFrequency[x], reverse=True)]
-        f.write('Pokemon Arranged by Frequency\n')
-        f.write(' Counts | Freq (%) | Pokemon\n')
-        for (mon,freq) in monFrequencySorted:
-            f.write((7-len(str(freq)))*' ' + str(freq))
-            f.write(' | ')
-            percentStr = "{:.3f}".format(freq/totalMons*100)
-            f.write((8-len(percentStr))*' ' + percentStr)
-            f.write(' | ')
-            f.write(mon)
-            f.write('\n')
 
     ## Print builder to file by gen
     if analyzeTeams and sortBuilder:

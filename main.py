@@ -9,14 +9,15 @@ import copy
 import urllib.request
 import json
 import math
+import operator
 
 ######## PARAMETERS FOR TUNING TO YOUR LIKING ########
 
 #### --- REPLACE WITH YOUR BUILDER --- ####
-fin = 'da_adv_ou.txt'
+fin = 'asta_linear_builder.txt'
 
 ### DOWNLOAD LATEST POKEDEX
-downloadPokedex = True
+downloadPokedex = False
 
 #### METAGAME PARAMETERS
 allGenerations = True
@@ -784,14 +785,23 @@ for gen in generation:
     
     setListNameSorted = sorted(copy.deepcopy(setListComplete), key=lambda x:x['Name']); # Alphabetical-sorted list of sets in dict format
     setListLen = len(setListNameSorted)
+    setListNameSortedIndex = sorted(range(setListLen), key=lambda x:setListComplete[x]['Name'])
+
 
     ## Categorize sets for synergy analysis
     # Aggregate by Item or EVs, then store moves
     categoryDict = dict()
     
+    importantItems = ['Choice Band']
+    movePairSynergyThreshold = 1/6
+    moveProbThreshold = 0.2
+    moveCountThreshold = 2
+    sumMoveProbThreshold = 0.8
+
     for n in range(setListLen):
         currentSetDict = setListNameSorted[n]
         if currentSetDict['Name'] not in categoryDict:
+            # print(currentSetDict['Name'])
             categoryDict[currentSetDict['Name']] = dict()
             categoryDict[currentSetDict['Name']]['Count'] = 0
         categoryDict[currentSetDict['Name']]['Count'] += 1
@@ -800,25 +810,239 @@ for gen in generation:
             category1 = currentSetDict['Item']
         else:
             currentEVs = copy.deepcopy(currentSetDict['EVs'])
-            highestEVIndex1 = currentEVs.find(max(currentEVs))
+            highestEVIndex1 = currentEVs.index(max(currentEVs))
             tempEVs = copy.deepcopy(currentEVs)
             del tempEVs[highestEVIndex1]
-            highestEVIndex2 = tempEVs.find(max(tempEVs))
+            highestEVIndex2 = tempEVs.index(max(tempEVs))
             if highestEVIndex2 >= highestEVIndex1:
                 highestEVIndex2 += 1
-            category1 = [highestEVIndex1,highestEVIndex2]
+            category1 = tuple(sorted([highestEVIndex1,highestEVIndex2]))
         if category1 not in categoryDict[currentSetDict['Name']]:
-            categoryDict[currentSetDict['Name']][category1] = dict()
-            categoryDict[currentSetDict['Name']][category1]['Count'] = 0
+            categoryDict[currentSetDict['Name']][category1] = {
+                'ActualCount': [dict(),dict()],
+                'PriorProb': dict(),
+                'ActualProb': dict(),
+                'SumProb': dict(),
+                'MutualInfo': dict(),
+                'TotalCount': [0,0],
+                'Count': 0 # category
+            }
         categoryDict[currentSetDict['Name']][category1]['Count'] += 1
-        for m in currentSetDict['Moveset']:
-            if m not in categoryDict[currentSetDict['Name']][category1]:
-                categoryDict[currentSetDict['Name']][category1][m] = 0
-            categoryDict[currentSetDict['Name']][category1][m] += 1
-    for mon in categoryDict:
+        incMove = 1
+        ## Generate first and second order move statistics
+        for p in range(2):
+            moveCore = combinations(currentSetDict['Moveset'],p+1)
+            for c in moveCore:
+                cSort = tuple(sorted(c))
+                if cSort in categoryDict[currentSetDict['Name']][category1]['ActualCount'][p]:
+                    categoryDict[currentSetDict['Name']][category1]['ActualCount'][p][cSort] += incMove
+                else:
+                    categoryDict[currentSetDict['Name']][category1]['ActualCount'][p][cSort] = incMove
+                categoryDict[currentSetDict['Name']][category1]['TotalCount'][p] += 1
+
+    for name in categoryDict:
+        # print(name)
+        for cat in categoryDict[name]:
+            if cat == 'Count' or cat in importantItems:
+                continue
+            # print(cat)
+            ## Calculate uncorrelated probabilities
+            # movePairs = combinations([c[0] for c in categoryDict[name][cat]['ActualCount'][1].keys()])
+            movePairs = combinations([c[0] for c in categoryDict[name][cat]['ActualCount'][0]],2)
+            totalMoveCount = categoryDict[name][cat]['TotalCount'][0]
+            totalPairCount = categoryDict[name][cat]['TotalCount'][1]
+            movePairCandidates = []
+            for c in movePairs:
+                cSort = tuple(sorted(c))
+                probMove = [categoryDict[name][cat]['ActualCount'][0][(m,)] / totalMoveCount for m in cSort]
+                categoryDict[name][cat]['PriorProb'][cSort] = probMove[0]*probMove[1]*(1/(1-probMove[0])+1/(1-probMove[1]))
+                if cSort in categoryDict[name][cat]['ActualCount'][1]:
+                    categoryDict[name][cat]['ActualProb'][cSort] = categoryDict[name][cat]['ActualCount'][1][cSort] / totalPairCount
+                else:
+                    categoryDict[name][cat]['ActualProb'][cSort] = 0
+                categoryDict[name][cat]['MutualInfo'][cSort] = categoryDict[name][cat]['ActualProb'][cSort] / categoryDict[name][cat]['PriorProb'][cSort]
+                categoryDict[name][cat]['SumProb'][cSort] = sum(probMove) - categoryDict[name][cat]['ActualProb'][cSort] #adjusted by PIE
+                if categoryDict[name][cat]['MutualInfo'][cSort] < movePairSynergyThreshold:
+                    # print('Stage 3')
+                    # print(c)
+                    # print(min(probMove))
+                    if min(probMove) > (1/4) * moveProbThreshold:
+                        # print('Stage 4')
+                        if min([categoryDict[name][cat]['ActualCount'][0][(m,)] for m in cSort]) > moveCountThreshold:
+                            movePairCandidates.append(cSort)
+                            # print('Stage 5')
+            if len(movePairCandidates) > 0:
+                # print('Stage 6; chosen core is')
+                chosenCore = max(movePairCandidates,key=lambda x:categoryDict[name][cat]['SumProb'][x])
+                # print(chosenCore)
+                if categoryDict[name][cat]['SumProb'][chosenCore] > (1/4)*sumMoveProbThreshold:
+                    categoryDict[name][cat]['SplitMoves'] = chosenCore
+                    # print('Moves Have Been Split')
+
+    def shortenMove(move):
+        # Shorten Move
+        if move.find('Hidden Power') > -1:
+            move = move.replace('Hidden Power','HP')
+            move = move.replace('[','')
+            move = move.replace(']','')
+            return move
+        move = move.replace('-',' ')
+        if move.find(' ') > -1 or move.find('-') > -1:
+            initials = ""
+            moveSplit = move.split()
+            for word in moveSplit:  # go through each name
+                initials += word[0].upper()  # append the initial
+            move = initials     
+        return move         
+
+    ## Generate category nicknames
+    namingExclusionMoveThreshold = 1/4 * 0.15 # 0.1
+    namingMinMoveProb = 1/4 * 0.85 # 0.9
+    namingExclusionCatThreshold = 0.1
+    index2stat = {
+    0 : 'HP',
+    1 : 'Atk',
+    2 : 'Def',
+    3 : 'SpA',
+    4 : 'SpD',
+    5 : 'Spe'
+    }
+    categoryNics = dict()
+    for name in categoryDict:
+        movesCutDict = dict()
+        for cat in categoryDict[name]:
+            if cat == 'Count':
+                continue
+            movesCutDict[cat] = dict()
+            # Find a move that describes the set well
+            totalMoveCount = categoryDict[name][cat]['TotalCount'][0]
+            for c in categoryDict[name][cat]['ActualCount'][0]:
+                prob = categoryDict[name][cat]['ActualCount'][0][c] / totalMoveCount
+                if prob > namingExclusionMoveThreshold:
+                    move = c[0]
+                    movesCutDict[cat][move] = prob
+        for cat in categoryDict[name]:
+            if cat == 'Count':
+                continue
+            fullCat = (name,cat)
+            if cat in importantItems:
+                cat = cat.replace(' Berry', '')
+                cat = cat.replace('Choice ', '')
+                cat = cat.replace('Assault Vest', 'AV')
+                categoryNics[fullCat] = cat + ' ' + name
+                continue
+            else:
+                statStr = index2stat[cat[0]] + '/' + index2stat[cat[1]]
+                # Find a move that describes the set well
+                currentMoveSet = set(movesCutDict[cat].keys())
+                differenceSet = set(movesCutDict[cat].keys())
+                diffTaken = False
+                for dat in categoryDict[name]:
+                    if dat == 'Count':
+                        continue
+                    if dat == cat:
+                        continue
+                    if categoryDict[name][dat]['Count'] / categoryDict[name]['Count'] < namingExclusionCatThreshold:
+                        continue
+                    differenceSet = differenceSet.difference(set(movesCutDict[dat].keys()))
+                    diffTaken = True
+                descriptiveMove = ''
+                if differenceSet and diffTaken: #len(categoryDict[name]) > 2: # account for Count
+                    maxMove = max(differenceSet,key=lambda x:movesCutDict[cat][x])
+                    if movesCutDict[cat][maxMove] > namingMinMoveProb:
+                        descriptiveMove = shortenMove(maxMove)
+                if 'SplitMoves' in categoryDict[name][cat]:
+                    for m in range(2):
+                        move = categoryDict[name][cat]['SplitMoves'][m]
+                        fullCat = (name,cat,move)
+                        move = shortenMove(move)
+                        if descriptiveMove == '':
+                            categoryNics[fullCat] = statStr + ' ' + move + ' ' + name
+                        else:
+                            categoryNics[fullCat] = statStr + ' ' + move + ' ' + descriptiveMove + ' ' + name
+                else:
+                    if len(categoryDict[name]) <= 2: # account for Count
+                        categoryNics[fullCat] = name
+                        continue
+                    if descriptiveMove == '':
+                        categoryNics[fullCat] = statStr + ' ' + name
+                    else:
+                        categoryNics[fullCat] = statStr + ' ' + descriptiveMove + ' ' + name
+
+
+    ## List Categories
+    catLeadList = dict()
+    catCoreList = [dict(),dict(),dict(),dict(),dict(),dict()]
+    for n in range(len(teamList)):
+        if teamList[n]['Anomalies'] > anomalyThreshold:
+            inc = 0 # increment
+            continue
+        else:
+            inc = 1
+        ## Find the category of each mon
+        categoryList = list()
+        monIndex = 0
+        for s in setList[teamList[n]['Index'][0]:teamList[n]['Index'][1]]:
+            category = [s['Name']]
+            if s['Item'] in importantItems:
+                category.append(s['Item'])
+            else:
+                currentEVs = copy.deepcopy(s['EVs'])
+                highestEVIndex1 = currentEVs.index(max(currentEVs))
+                tempEVs = copy.deepcopy(currentEVs)
+                del tempEVs[highestEVIndex1]
+                highestEVIndex2 = tempEVs.index(max(tempEVs))
+                if highestEVIndex2 >= highestEVIndex1:
+                    highestEVIndex2 += 1
+                highestEVs = tuple(sorted([highestEVIndex1,highestEVIndex2]))
+                category.append(highestEVs)
+                # check category dict
+                if 'SplitMoves' in categoryDict[s['Name']][highestEVs]:
+                    move0InSet = (categoryDict[s['Name']][highestEVs]['SplitMoves'][0] in s['Moveset'])
+                    move1InSet = (categoryDict[s['Name']][highestEVs]['SplitMoves'][1] in s['Moveset'])
+                    if move0InSet and not move1InSet:
+                        category.append(categoryDict[s['Name']][highestEVs]['SplitMoves'][0])
+                    elif move1InSet and not move0InSet:
+                        category.append(categoryDict[s['Name']][highestEVs]['SplitMoves'][1])
+                    else:
+                        monIndex += 1
+                        continue
+            if monIndex == 0 and not teamPreview:
+                if tuple(category) in catLeadList:
+                    catLeadList[tuple(category)] += inc
+                else:
+                    catLeadList[tuple(category)] = inc
+            monIndex += 1
+            categoryList.append(tuple(category))
+
+        for p in range(6):
+            catCore = combinations(categoryList,p+1)
+            for c in catCore:
+                cSort = tuple(sorted(c, key=lambda x:x[0]))
+                if cSort in catCoreList[p]:
+                    catCoreList[p][cSort] += inc
+                else:
+                    catCoreList[p][cSort] = inc
         
 
-
+    catCoreCount = [0]*6
+    catMultiplicity = [0]*6
+    for p in range(6):
+        catCoreCount[p] = sum(catCoreList[p].values())
+        catMultiplicity[p] = math.factorial(p+1)
+    ## Calculate multivariate pointwise mutual information 
+    mpmiCatList = [dict(),dict(),dict(),dict(),dict(),dict()]
+    for p in range(6):
+        for c in catCoreList[p]:
+            mpmiCatList[p][c] = 0;
+            for q in range(p+1):
+                for d in combinations(c,q+1):
+                    if catCoreList[q][d] != 0:
+                        # sign convention: positive if synergetic
+                        mpmiCatList[p][c] += (-1)**(q) * (-math.log(catCoreList[q][d]/catCoreCount[q]/catMultiplicity[q],2))
+                    else:
+                        mpmiCatList[p][c] = 0
+        
 
     ## Aggregates sets by EV equivalence
 
@@ -1069,7 +1293,71 @@ for gen in generation:
         setListMoves2CombinedRank[ii] = (frontIdent1*2**24 + frontIdent2*2**16 + backIdent1*2**8 + backIdent2)*2**10 - count
     setListMoves2Sorted = [setListMoves2Combined[i[0]] for i in sorted(enumerate(setListMoves2CombinedRank), key=lambda x:x[1])]
 
-
+    ## Print team set statistics to file
+    f1 = open(foutTemplate + '_' + gen + '_usage_sets_statistics' + '.txt','w',encoding='utf-8', errors='ignore')
+    f2 = open(foutTemplate + '_' + gen + '_synergy_sets_statistics' + '.txt','w',encoding='utf-8', errors='ignore')
+    totalMons = sum(list(monFrequency.values()))
+    if len(setList) > 0:
+        maxNameLen = max([len(categoryNics[c]) for c in categoryNics])
+    else:
+        maxNameLen = 18
+    
+    for f in [f1,f2]:
+        if analyzeTeams:
+            if not teamPreview:
+                leadFrequencySorted = [(l,catLeadList[l]) for l in sorted(catLeadList, key=lambda x:catLeadList[x], reverse=True)]
+                f.write('Team Lead Arranged by Frequency\n')
+                f.write(' Counts | Freq (%) | Lead\n')
+                for (lead,freq) in leadFrequencySorted:
+                    f.write((7-len(str(freq)))*' ' + str(freq))
+                    f.write(' | ')
+                    percentStr = "{:.3f}".format(freq/len(teamList)*100)
+                    f.write((8-len(percentStr))*' ' + percentStr)
+                    f.write(' | ')
+                    f.write(' '*(maxNameLen-len(categoryNics[lead])) + categoryNics[lead])
+                    f.write('\n')
+                f.write('\n')
+            for p in range(6):
+                if f == f1:
+                    coreFrequencySorted = [(c,catCoreList[p][c]) for c in sorted(catCoreList[p], key=lambda x:catCoreList[p][x], reverse=True)]
+                elif f == f2:
+                    coreFrequencySorted = [(c,catCoreList[p][c]) for c in sorted(catCoreList[p], key=lambda x:catCoreList[p][x]**usageWeight*mpmiCatList[p][x], reverse=True)]
+                if p == 0:
+                    f.write('Pokemon Arranged by Frequency\n')
+                    f.write(' Counts | Freq (%) | Pokemon\n')
+                else:
+                    f.write(str(p+1) + '-Cores Arranged by Frequency\n')
+                    f.write(' Counts | Freq (%) | Synergy | Cores\n')
+                for (core,freq) in coreFrequencySorted:
+                    if freq == 0:
+                        continue
+                    f.write((7-len(str(freq)))*' ' + str(freq))
+                    f.write(' | ')
+                    percentStr = "{:.3f}".format(freq/len(teamList)*100)
+                    f.write((8-len(percentStr))*' ' + percentStr)
+                    f.write(' | ')
+                    if p > 0:
+                        mpmiStr = "{:.2f}".format(mpmiCatList[p][core])
+                        f.write((7-len(mpmiStr))*' ' + mpmiStr)
+                        f.write(' | ')
+                    for q in range(p):
+                        f.write(' '*(maxNameLen-len(categoryNics[core[q]])) + categoryNics[core[q]])
+                        f.write(', ')
+                    f.write(' '*(maxNameLen-len(categoryNics[core[p]])) + categoryNics[core[p]])
+                    f.write('\n')
+                f.write('\n')
+        else: 
+            monFrequencySorted = [(mon,monFrequency[mon]) for mon in sorted(monFrequency, key=lambda x:monFrequency[x], reverse=True)]
+            f.write('Pokemon Arranged by Frequency\n')
+            f.write(' Counts | Freq (%) | Pokemon\n')
+            for (mon,freq) in monFrequencySorted:
+                f.write((7-len(str(freq)))*' ' + str(freq))
+                f.write(' | ')
+                percentStr = "{:.3f}".format(freq/totalMons*100)
+                f.write((8-len(percentStr))*' ' + percentStr)
+                f.write(' | ')
+                f.write(mon)
+                f.write('\n')
 
     ## Print statistics to file
     f1 = open(foutTemplate + '_' + gen + '_usage_statistics' + '.txt','w',encoding='utf-8', errors='ignore')

@@ -14,10 +14,10 @@ import operator
 ######## PARAMETERS FOR TUNING TO YOUR LIKING ########
 
 #### --- REPLACE WITH YOUR BUILDER --- ####
-fin = 'my_builder.txt'
+fin = 'asta_test.txt'
 
 ### DOWNLOAD LATEST POKEDEX
-downloadPokedex = True
+downloadPokedex = False
 
 #### METAGAME PARAMETERS
 allGenerations = True
@@ -43,10 +43,14 @@ ignoreSetsFraction = [1/8,1/16,1/32,0]
 showStatisticsInSets = True
 
 #### STATISTICS PARAMETERS
+maxCoreNum = 4
 usageWeight = 1.5
 importantItems = ['Choice Band']
 movePairSynergyThreshold = 1/6 # 1/6
+movePairInTripletSynergyThreshold = 1/6 # 1/6
+moveTripletSynergyThreshold = 1/6 # 1/6
 moveProbThreshold = 0.2 # 0.2
+moveProbInTripletThreshold = 0.1 # 0.15
 moveCountThreshold = 2 # 2
 sumMoveProbThreshold = 0.8 # 0.8
 namingExclusionMoveThreshold = 1/4 * 0.15 # 0.1
@@ -823,18 +827,18 @@ for gen in generation:
             # if currentSetDict['Name'] == 'Tyranitar' and category1 == 'Choice Band':
             #     print('Yoohoo')
             categoryDict[currentSetDict['Name']][category1] = {
-                'ActualCount': [dict(),dict()],
-                'PriorProb': dict(),
-                'ActualProb': dict(),
-                'SumProb': dict(),
-                'MutualInfo': dict(),
-                'TotalCount': [0,0],
+                'ActualCount': [dict(),dict(),dict()],
+                'PriorProb': [dict(),dict()],
+                'ActualProb': [dict(),dict()],
+                'SumProb': [dict(),dict()],
+                'MutualInfo': [dict(),dict()],
+                'TotalCount': [0,0,0],
                 'Count': 0 # category
             }
         categoryDict[currentSetDict['Name']][category1]['Count'] += 1
         incMove = 1
         ## Generate first and second order move statistics
-        for p in range(2):
+        for p in range(3):
             moveCore = combinations(currentSetDict['Moveset'],p+1)
             for c in moveCore:
                 cSort = tuple(sorted(c))
@@ -849,9 +853,7 @@ for gen in generation:
         for cat in categoryDict[name]:
             if cat == 'Count' or cat in importantItems:
                 continue
-            # print(cat)
             ## Calculate uncorrelated probabilities
-            # movePairs = combinations([c[0] for c in categoryDict[name][cat]['ActualCount'][1].keys()])
             movePairs = combinations([c[0] for c in categoryDict[name][cat]['ActualCount'][0]],2)
             totalMoveCount = categoryDict[name][cat]['TotalCount'][0]
             totalPairCount = categoryDict[name][cat]['TotalCount'][1]
@@ -859,29 +861,64 @@ for gen in generation:
             for c in movePairs:
                 cSort = tuple(sorted(c))
                 probMove = [categoryDict[name][cat]['ActualCount'][0][(m,)] / totalMoveCount for m in cSort]
-                categoryDict[name][cat]['PriorProb'][cSort] = probMove[0]*probMove[1]*(1/(1-probMove[0])+1/(1-probMove[1]))
+                categoryDict[name][cat]['PriorProb'][0][cSort] = probMove[0]*probMove[1]*(1/(1-probMove[0])+1/(1-probMove[1]))
                 if cSort in categoryDict[name][cat]['ActualCount'][1]:
-                    categoryDict[name][cat]['ActualProb'][cSort] = categoryDict[name][cat]['ActualCount'][1][cSort] / totalPairCount
+                    categoryDict[name][cat]['ActualProb'][0][cSort] = categoryDict[name][cat]['ActualCount'][1][cSort] / totalPairCount
                 else:
-                    categoryDict[name][cat]['ActualProb'][cSort] = 0
-                categoryDict[name][cat]['MutualInfo'][cSort] = categoryDict[name][cat]['ActualProb'][cSort] / categoryDict[name][cat]['PriorProb'][cSort]
-                categoryDict[name][cat]['SumProb'][cSort] = sum(probMove) - categoryDict[name][cat]['ActualProb'][cSort] #adjusted by PIE
-                if categoryDict[name][cat]['MutualInfo'][cSort] < movePairSynergyThreshold:
-                    # print('Stage 3')
-                    # print(c)
-                    # print(min(probMove))
+                    categoryDict[name][cat]['ActualProb'][0][cSort] = 0
+                categoryDict[name][cat]['MutualInfo'][0][cSort] = categoryDict[name][cat]['ActualProb'][0][cSort] / categoryDict[name][cat]['PriorProb'][0][cSort]
+                categoryDict[name][cat]['SumProb'][0][cSort] = sum(probMove) - categoryDict[name][cat]['ActualProb'][0][cSort] #adjusted by PIE
+                if categoryDict[name][cat]['MutualInfo'][0][cSort] < movePairSynergyThreshold:
                     if min(probMove) > (1/4) * moveProbThreshold:
-                        # print('Stage 4')
                         if min([categoryDict[name][cat]['ActualCount'][0][(m,)] for m in cSort]) > moveCountThreshold:
                             movePairCandidates.append(cSort)
-                            # print('Stage 5')
             if len(movePairCandidates) > 0:
-                # print('Stage 6; chosen core is')
-                chosenCore = max(movePairCandidates,key=lambda x:categoryDict[name][cat]['SumProb'][x])
-                # print(chosenCore)
-                if categoryDict[name][cat]['SumProb'][chosenCore] > (1/4)*sumMoveProbThreshold:
+                chosenCore = max(movePairCandidates,key=lambda x:categoryDict[name][cat]['SumProb'][0][x])
+                if categoryDict[name][cat]['SumProb'][0][chosenCore] > (1/4)*sumMoveProbThreshold:
                     categoryDict[name][cat]['SplitMoves'] = chosenCore
-                    # print('Moves Have Been Split')
+                else:
+                    # print("Stage 1")
+                    moveTriplets = combinations([c[0] for c in categoryDict[name][cat]['ActualCount'][0]],3)
+                    totalTripletCount = categoryDict[name][cat]['TotalCount'][2]
+                    moveTripletCandidates = []
+                    for c in moveTriplets:
+                        # print("Stage 2")
+                        cSort = tuple(sorted(c))
+                        probMove = [categoryDict[name][cat]['ActualCount'][0][(m,)] / totalMoveCount for m in cSort]
+                        categoryDict[name][cat]['PriorProb'][1][cSort] = probMove[0]*probMove[1]*probMove[2]*(
+                            1/(1-probMove[0])/(1-probMove[0]-probMove[1]) + 
+                            1/(1-probMove[1])/(1-probMove[1]-probMove[0]) + 
+                            1/(1-probMove[0])/(1-probMove[0]-probMove[2]) + 
+                            1/(1-probMove[2])/(1-probMove[2]-probMove[0]) + 
+                            1/(1-probMove[1])/(1-probMove[1]-probMove[2]) + 
+                            1/(1-probMove[2])/(1-probMove[2]-probMove[1]))
+                        if cSort in categoryDict[name][cat]['ActualCount'][2]:
+                            categoryDict[name][cat]['ActualProb'][1][cSort] = categoryDict[name][cat]['ActualCount'][2][cSort] / totalTripletCount
+                        else:
+                            categoryDict[name][cat]['ActualProb'][1][cSort] = 0
+                        categoryDict[name][cat]['MutualInfo'][1][cSort] = categoryDict[name][cat]['ActualProb'][1][cSort] / categoryDict[name][cat]['PriorProb'][1][cSort]
+                        subMovePairs = combinations(cSort,2)
+                        categoryDict[name][cat]['SumProb'][1][cSort] = sum(probMove) - sum([categoryDict[name][cat]['ActualProb'][0][tuple(sorted(d))] for d in subMovePairs]) + categoryDict[name][cat]['ActualProb'][1][cSort]
+                        subMovePairs = combinations(cSort,2)
+                        if categoryDict[name][cat]['MutualInfo'][1][cSort] < moveTripletSynergyThreshold:
+                            allPairsInCandidates = True
+                            for d in subMovePairs:
+                                if categoryDict[name][cat]['MutualInfo'][0][tuple(sorted(d))] > movePairInTripletSynergyThreshold:
+                                    allPairsInCandidates = False
+                            if allPairsInCandidates:
+                                if min(probMove) > (1/4) * moveProbInTripletThreshold:
+                                    if min([categoryDict[name][cat]['ActualCount'][0][(m,)] for m in cSort]) > moveCountThreshold:
+                                        moveTripletCandidates.append(cSort)
+                    if len(moveTripletCandidates) > 0:
+                        chosenCore = max(moveTripletCandidates,key=lambda x:categoryDict[name][cat]['SumProb'][1][x])
+                        if categoryDict[name][cat]['SumProb'][1][chosenCore] > (1/4)*sumMoveProbThreshold:
+                            # print("Stage 4")
+                            # print(name)
+                            # print(cat)
+                            # print(chosenCore)
+                            # print(categoryDict[name][cat]['SumProb'][1][chosenCore])
+                            categoryDict[name][cat]['SplitMoves'] = chosenCore
+                                
 
     def shortenMove(move):
         # Shorten Move
@@ -974,9 +1011,8 @@ for gen in generation:
                             if movesCutDict[cat][maxMove1] > namingMinMoveProb:
                                 descriptiveMove = shortenMove(maxMove1)
 
-
                 if 'SplitMoves' in categoryDict[name][cat]:
-                    for m in range(2):
+                    for m in range(len(categoryDict[name][cat]['SplitMoves'])):
                         move = categoryDict[name][cat]['SplitMoves'][m]
                         fullCat = (name,cat,move)
                         move = shortenMove(move)
@@ -1022,15 +1058,30 @@ for gen in generation:
                 category.append(highestEVs)
                 # check category dict
                 if 'SplitMoves' in categoryDict[s['Name']][highestEVs]:
-                    move0InSet = (categoryDict[s['Name']][highestEVs]['SplitMoves'][0] in s['Moveset'])
-                    move1InSet = (categoryDict[s['Name']][highestEVs]['SplitMoves'][1] in s['Moveset'])
-                    if move0InSet and not move1InSet:
-                        category.append(categoryDict[s['Name']][highestEVs]['SplitMoves'][0])
-                    elif move1InSet and not move0InSet:
-                        category.append(categoryDict[s['Name']][highestEVs]['SplitMoves'][1])
-                    else:
-                        monIndex += 1
-                        continue
+                    numSplit = len(categoryDict[s['Name']][highestEVs]['SplitMoves'])
+                    if numSplit == 2:
+                        move0InSet = (categoryDict[s['Name']][highestEVs]['SplitMoves'][0] in s['Moveset'])
+                        move1InSet = (categoryDict[s['Name']][highestEVs]['SplitMoves'][1] in s['Moveset'])
+                        if move0InSet and not move1InSet:
+                            category.append(categoryDict[s['Name']][highestEVs]['SplitMoves'][0])
+                        elif move1InSet and not move0InSet:
+                            category.append(categoryDict[s['Name']][highestEVs]['SplitMoves'][1])
+                        else:
+                            monIndex += 1
+                            continue
+                    elif numSplit == 3:
+                        move0InSet = (categoryDict[s['Name']][highestEVs]['SplitMoves'][0] in s['Moveset'])
+                        move1InSet = (categoryDict[s['Name']][highestEVs]['SplitMoves'][1] in s['Moveset'])
+                        move2InSet = (categoryDict[s['Name']][highestEVs]['SplitMoves'][2] in s['Moveset'])
+                        if move0InSet and (not move1InSet) and (not move2InSet):
+                            category.append(categoryDict[s['Name']][highestEVs]['SplitMoves'][0])
+                        elif move1InSet and (not move0InSet) and (not move2InSet):
+                            category.append(categoryDict[s['Name']][highestEVs]['SplitMoves'][1])
+                        elif move2InSet and (not move0InSet) and (not move1InSet):
+                            category.append(categoryDict[s['Name']][highestEVs]['SplitMoves'][2])
+                        else:
+                            monIndex += 1
+                            continue
             if monIndex == 0 and not teamPreview:
                 if tuple(category) in catLeadList:
                     catLeadList[tuple(category)] += inc
@@ -1338,7 +1389,10 @@ for gen in generation:
                 f.write(', ')
             f.write(importantItems[-1] + '\n')
             f.write('movePairSynergyThreshold: ' + '{:.3f}'.format(movePairSynergyThreshold) + '\n')
+            f.write('movePairInTripletSynergyThreshold: ' + '{:.3f}'.format(movePairInTripletSynergyThreshold) + '\n')
+            f.write('moveTripletSynergyThreshold: ' + '{:.3f}'.format(moveTripletSynergyThreshold) + '\n')
             f.write('moveProbThreshold: ' + '{:.3f}'.format(moveProbThreshold) + '\n')
+            f.write('moveProbInTripletThreshold: ' + '{:.3f}'.format(moveProbInTripletThreshold) + '\n')
             f.write('moveCountThreshold: ' + str(moveCountThreshold) + '\n')
             f.write('sumMoveProbThreshold: ' + '{:.3f}'.format(sumMoveProbThreshold) + '\n')
             f.write('namingExclusionMoveThreshold: 1/4 * ' + '{:.3f}'.format(namingExclusionMoveThreshold*4) + '\n')
@@ -1358,7 +1412,7 @@ for gen in generation:
                     f.write(' '*(maxNameLen-len(categoryNics[lead])) + categoryNics[lead])
                     f.write('\n')
                 f.write('\n')
-            for p in range(6):
+            for p in range(maxCoreNum):
                 if f == f1:
                     coreFrequencySorted = [(c,catCoreList[p][c]) for c in sorted(catCoreList[p], key=lambda x:catCoreList[p][x], reverse=True)]
                 elif f == f2:
@@ -1424,7 +1478,7 @@ for gen in generation:
                     f.write(' '*(maxNameLen-len(lead)) + lead)
                     f.write('\n')
                 f.write('\n')
-            for p in range(6):
+            for p in range(maxCoreNum):
                 if f == f1:
                     coreFrequencySorted = [(c,coreList[p][c]) for c in sorted(coreList[p], key=lambda x:coreList[p][x], reverse=True)]
                 elif f == f2:

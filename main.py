@@ -14,10 +14,10 @@ import operator
 ######## PARAMETERS FOR TUNING TO YOUR LIKING ########
 
 #### --- REPLACE WITH YOUR BUILDER --- ####
-fin = 'asta_test.txt'
+fin = 'my_builder.txt'
 
 ### DOWNLOAD LATEST POKEDEX
-downloadPokedex = False
+downloadPokedex = True
 
 #### METAGAME PARAMETERS
 allGenerations = True

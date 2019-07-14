@@ -14,10 +14,10 @@ import operator
 ######## PARAMETERS FOR TUNING TO YOUR LIKING ########
 
 #### --- REPLACE WITH YOUR BUILDER --- ####
-fin = 'asta_linear_builder.txt'
+fin = 'my_builder.txt'
 
 ### DOWNLOAD LATEST POKEDEX
-downloadPokedex = False
+downloadPokedex = True
 
 #### METAGAME PARAMETERS
 allGenerations = True
@@ -44,6 +44,14 @@ showStatisticsInSets = True
 
 #### STATISTICS PARAMETERS
 usageWeight = 1.5
+importantItems = ['Choice Band']
+movePairSynergyThreshold = 1/6 # 1/6
+moveProbThreshold = 0.2 # 0.2
+moveCountThreshold = 2 # 2
+sumMoveProbThreshold = 0.8 # 0.8
+namingExclusionMoveThreshold = 1/4 * 0.15 # 0.1
+namingMinMoveProb = 1/4 * 0.80 # 0.9
+namingExclusionCatThreshold = 0.1
 
 #### COMBINED BUILDER PARAMETERS
 sortBuilder = True
@@ -791,12 +799,6 @@ for gen in generation:
     ## Categorize sets for synergy analysis
     # Aggregate by Item or EVs, then store moves
     categoryDict = dict()
-    
-    importantItems = ['Choice Band']
-    movePairSynergyThreshold = 1/6
-    moveProbThreshold = 0.2
-    moveCountThreshold = 2
-    sumMoveProbThreshold = 0.8
 
     for n in range(setListLen):
         currentSetDict = setListNameSorted[n]
@@ -818,6 +820,8 @@ for gen in generation:
                 highestEVIndex2 += 1
             category1 = tuple(sorted([highestEVIndex1,highestEVIndex2]))
         if category1 not in categoryDict[currentSetDict['Name']]:
+            # if currentSetDict['Name'] == 'Tyranitar' and category1 == 'Choice Band':
+            #     print('Yoohoo')
             categoryDict[currentSetDict['Name']][category1] = {
                 'ActualCount': [dict(),dict()],
                 'PriorProb': dict(),
@@ -896,9 +900,6 @@ for gen in generation:
         return move         
 
     ## Generate category nicknames
-    namingExclusionMoveThreshold = 1/4 * 0.15 # 0.1
-    namingMinMoveProb = 1/4 * 0.85 # 0.9
-    namingExclusionCatThreshold = 0.1
     index2stat = {
     0 : 'HP',
     1 : 'Atk',
@@ -947,10 +948,33 @@ for gen in generation:
                     differenceSet = differenceSet.difference(set(movesCutDict[dat].keys()))
                     diffTaken = True
                 descriptiveMove = ''
-                if differenceSet and diffTaken: #len(categoryDict[name]) > 2: # account for Count
-                    maxMove = max(differenceSet,key=lambda x:movesCutDict[cat][x])
-                    if movesCutDict[cat][maxMove] > namingMinMoveProb:
-                        descriptiveMove = shortenMove(maxMove)
+                if diffTaken:
+                    if differenceSet: #len(categoryDict[name]) > 2: # account for Count
+                        maxMove = max(differenceSet,key=lambda x:movesCutDict[cat][x])
+                        if movesCutDict[cat][maxMove] > namingMinMoveProb:
+                            descriptiveMove = shortenMove(maxMove)
+                    if (not differenceSet) or (differenceSet and (movesCutDict[cat][maxMove] <= namingMinMoveProb)):
+                        # try to find move that intersects with at most one other category
+                        categorySet = set(categoryDict[name].keys())
+                        categorySet.remove('Count')
+                        categorySet.remove(cat)
+                        categoryCombs1 = combinations(categorySet,len(categorySet)-1)
+                        selectedMoves = dict()
+                        diffTaken = False
+                        for c in categoryCombs1:
+                            differenceSet = set(movesCutDict[cat].keys())
+                            for dat in c:
+                                differenceSet = differenceSet.difference(set(movesCutDict[dat].keys()))
+                                diffTaken = True
+                            if diffTaken and differenceSet:
+                                maxMove = max(differenceSet,key=lambda x:movesCutDict[cat][x])
+                                selectedMoves[maxMove] = movesCutDict[cat][maxMove]
+                        if selectedMoves:
+                            maxMove1 = max(selectedMoves,key=lambda x:movesCutDict[cat][x])
+                            if movesCutDict[cat][maxMove1] > namingMinMoveProb:
+                                descriptiveMove = shortenMove(maxMove1)
+
+
                 if 'SplitMoves' in categoryDict[name][cat]:
                     for m in range(2):
                         move = categoryDict[name][cat]['SplitMoves'][m]
@@ -1304,6 +1328,23 @@ for gen in generation:
     
     for f in [f1,f2]:
         if analyzeTeams:
+            f.write('Built from ' + foutTemplate + '.txt\n')
+            f.write('-'*50 + '\n')
+            f.write('Parameters:\n')
+            f.write('usageWeight: ' + '{:.3f}'.format(usageWeight) + '\n')
+            f.write('importantItems: ')
+            for i in importantItems[0:-1]:
+                f.write(i)
+                f.write(', ')
+            f.write(importantItems[-1] + '\n')
+            f.write('movePairSynergyThreshold: ' + '{:.3f}'.format(movePairSynergyThreshold) + '\n')
+            f.write('moveProbThreshold: ' + '{:.3f}'.format(moveProbThreshold) + '\n')
+            f.write('moveCountThreshold: ' + str(moveCountThreshold) + '\n')
+            f.write('sumMoveProbThreshold: ' + '{:.3f}'.format(sumMoveProbThreshold) + '\n')
+            f.write('namingExclusionMoveThreshold: 1/4 * ' + '{:.3f}'.format(namingExclusionMoveThreshold*4) + '\n')
+            f.write('namingMinMoveProb: 1/4 * ' + '{:.3f}'.format(namingMinMoveProb*4) + '\n')
+            f.write('namingExclusionCatThreshold: ' + '{:.3f}'.format(namingExclusionCatThreshold) + '\n')
+            f.write('-'*50 + '\n\n')
             if not teamPreview:
                 leadFrequencySorted = [(l,catLeadList[l]) for l in sorted(catLeadList, key=lambda x:catLeadList[x], reverse=True)]
                 f.write('Team Lead Arranged by Frequency\n')

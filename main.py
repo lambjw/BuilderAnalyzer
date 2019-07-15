@@ -14,10 +14,10 @@ import operator
 ######## PARAMETERS FOR TUNING TO YOUR LIKING ########
 
 #### --- REPLACE WITH YOUR BUILDER --- ####
-fin = 'my_builder.txt'
+fin = 'asta_linear_roro_gs_ud_builder.txt'
 
 ### DOWNLOAD LATEST POKEDEX
-downloadPokedex = True
+downloadPokedex = False
 
 #### METAGAME PARAMETERS
 allGenerations = True
@@ -53,6 +53,7 @@ moveProbThreshold = 0.2 # 0.2
 moveProbInTripletThreshold = 0.1 # 0.15
 moveCountThreshold = 2 # 2
 sumMoveProbThreshold = 0.8 # 0.8
+sumMoveProbTripletThreshold = 0.8 # 0.6
 namingExclusionMoveThreshold = 1/4 * 0.15 # 0.1
 namingMinMoveProb = 1/4 * 0.80 # 0.9
 namingExclusionCatThreshold = 0.1
@@ -911,7 +912,7 @@ for gen in generation:
                                         moveTripletCandidates.append(cSort)
                     if len(moveTripletCandidates) > 0:
                         chosenCore = max(moveTripletCandidates,key=lambda x:categoryDict[name][cat]['SumProb'][1][x])
-                        if categoryDict[name][cat]['SumProb'][1][chosenCore] > (1/4)*sumMoveProbThreshold:
+                        if categoryDict[name][cat]['SumProb'][1][chosenCore] > (1/4)*sumMoveProbTripletThreshold:
                             # print("Stage 4")
                             # print(name)
                             # print(cat)
@@ -1371,13 +1372,14 @@ for gen in generation:
     ## Print team set statistics to file
     f1 = open(foutTemplate + '_' + gen + '_usage_sets_statistics' + '.txt','w',encoding='utf-8', errors='ignore')
     f2 = open(foutTemplate + '_' + gen + '_synergy_sets_statistics' + '.txt','w',encoding='utf-8', errors='ignore')
+    f3 = open(foutTemplate + '_' + gen + '_statistics_legend' + '.txt','w',encoding='utf-8', errors='ignore')
     totalMons = sum(list(monFrequency.values()))
     if len(setList) > 0:
         maxNameLen = max([len(categoryNics[c]) for c in categoryNics])
     else:
         maxNameLen = 18
     
-    for f in [f1,f2]:
+    for f in [f1,f2,f3]:
         if analyzeTeams:
             f.write('Built from ' + foutTemplate + '.txt\n')
             f.write('-'*50 + '\n')
@@ -1395,35 +1397,60 @@ for gen in generation:
             f.write('moveProbInTripletThreshold: ' + '{:.3f}'.format(moveProbInTripletThreshold) + '\n')
             f.write('moveCountThreshold: ' + str(moveCountThreshold) + '\n')
             f.write('sumMoveProbThreshold: ' + '{:.3f}'.format(sumMoveProbThreshold) + '\n')
+            f.write('sumMoveProbTripletThreshold: ' + '{:.3f}'.format(sumMoveProbTripletThreshold) + '\n')
             f.write('namingExclusionMoveThreshold: 1/4 * ' + '{:.3f}'.format(namingExclusionMoveThreshold*4) + '\n')
             f.write('namingMinMoveProb: 1/4 * ' + '{:.3f}'.format(namingMinMoveProb*4) + '\n')
             f.write('namingExclusionCatThreshold: ' + '{:.3f}'.format(namingExclusionCatThreshold) + '\n')
             f.write('-'*50 + '\n\n')
-            if not teamPreview:
-                leadFrequencySorted = [(l,catLeadList[l]) for l in sorted(catLeadList, key=lambda x:catLeadList[x], reverse=True)]
-                f.write('Team Lead Arranged by Frequency\n')
-                f.write(' Counts | Freq (%) | Lead\n')
-                for (lead,freq) in leadFrequencySorted:
-                    f.write((7-len(str(freq)))*' ' + str(freq))
-                    f.write(' | ')
-                    percentStr = "{:.3f}".format(freq/len(teamList)*100)
-                    f.write((8-len(percentStr))*' ' + percentStr)
-                    f.write(' | ')
-                    f.write(' '*(maxNameLen-len(categoryNics[lead])) + categoryNics[lead])
+
+            if f == f1 or f == f2:
+                if not teamPreview:
+                    leadFrequencySorted = [(l,catLeadList[l]) for l in sorted(catLeadList, key=lambda x:catLeadList[x], reverse=True)]
+                    f.write('Team Lead Arranged by Frequency\n')
+                    f.write(' Counts | Freq (%) | Lead\n')
+                    for (lead,freq) in leadFrequencySorted:
+                        f.write((7-len(str(freq)))*' ' + str(freq))
+                        f.write(' | ')
+                        percentStr = "{:.3f}".format(freq/len(teamList)*100)
+                        f.write((8-len(percentStr))*' ' + percentStr)
+                        f.write(' | ')
+                        f.write(' '*(maxNameLen-len(categoryNics[lead])) + categoryNics[lead])
+                        f.write('\n')
                     f.write('\n')
-                f.write('\n')
-            for p in range(maxCoreNum):
-                if f == f1:
-                    coreFrequencySorted = [(c,catCoreList[p][c]) for c in sorted(catCoreList[p], key=lambda x:catCoreList[p][x], reverse=True)]
-                elif f == f2:
-                    coreFrequencySorted = [(c,catCoreList[p][c]) for c in sorted(catCoreList[p], key=lambda x:catCoreList[p][x]**usageWeight*mpmiCatList[p][x], reverse=True)]
-                if p == 0:
-                    f.write('Pokemon Arranged by Frequency\n')
-                    f.write(' Counts | Freq (%) | Pokemon\n')
-                else:
-                    f.write(str(p+1) + '-Cores Arranged by Frequency\n')
-                    f.write(' Counts | Freq (%) | Synergy | Cores\n')
-                for (core,freq) in coreFrequencySorted:
+                for p in range(maxCoreNum):
+                    if f == f1:
+                        coreFrequencySorted = [(c,catCoreList[p][c]) for c in sorted(catCoreList[p], key=lambda x:catCoreList[p][x], reverse=True)]
+                    elif f == f2:
+                        coreFrequencySorted = [(c,catCoreList[p][c]) for c in sorted(catCoreList[p], key=lambda x:catCoreList[p][x]**usageWeight*mpmiCatList[p][x], reverse=True)]
+                    if p == 0:
+                        f.write('Pokemon Arranged by Frequency\n')
+                        f.write(' Counts | Freq (%) | Pokemon\n')
+                    else:
+                        f.write(str(p+1) + '-Cores Arranged by Frequency\n')
+                        f.write(' Counts | Freq (%) | Synergy | Cores\n')
+                    for (core,freq) in coreFrequencySorted:
+                        if freq == 0:
+                            continue
+                        f.write((7-len(str(freq)))*' ' + str(freq))
+                        f.write(' | ')
+                        percentStr = "{:.3f}".format(freq/len(teamList)*100)
+                        f.write((8-len(percentStr))*' ' + percentStr)
+                        f.write(' | ')
+                        if p > 0:
+                            mpmiStr = "{:.2f}".format(mpmiCatList[p][core])
+                            f.write((7-len(mpmiStr))*' ' + mpmiStr)
+                            f.write(' | ')
+                        for q in range(p):
+                            f.write(' '*(maxNameLen-len(categoryNics[core[q]])) + categoryNics[core[q]])
+                            f.write(', ')
+                        f.write(' '*(maxNameLen-len(categoryNics[core[p]])) + categoryNics[core[p]])
+                        f.write('\n')
+                    f.write('\n')
+            elif f == f3:
+                coreNameSorted = [(c,catCoreList[0][c]) for c in sorted(catCoreList[0], key=lambda x:x[0][0])]
+                f.write('Sets Legend in Alphabetical Order\n')
+                f.write(' Counts | Freq (%) | Pokemon\n')
+                for (core,freq) in coreNameSorted:
                     if freq == 0:
                         continue
                     f.write((7-len(str(freq)))*' ' + str(freq))
@@ -1431,16 +1458,8 @@ for gen in generation:
                     percentStr = "{:.3f}".format(freq/len(teamList)*100)
                     f.write((8-len(percentStr))*' ' + percentStr)
                     f.write(' | ')
-                    if p > 0:
-                        mpmiStr = "{:.2f}".format(mpmiCatList[p][core])
-                        f.write((7-len(mpmiStr))*' ' + mpmiStr)
-                        f.write(' | ')
-                    for q in range(p):
-                        f.write(' '*(maxNameLen-len(categoryNics[core[q]])) + categoryNics[core[q]])
-                        f.write(', ')
-                    f.write(' '*(maxNameLen-len(categoryNics[core[p]])) + categoryNics[core[p]])
+                    f.write(' '*(maxNameLen-len(categoryNics[core[0]])) + categoryNics[core[0]])
                     f.write('\n')
-                f.write('\n')
         else: 
             monFrequencySorted = [(mon,monFrequency[mon]) for mon in sorted(monFrequency, key=lambda x:monFrequency[x], reverse=True)]
             f.write('Pokemon Arranged by Frequency\n')
@@ -1453,6 +1472,7 @@ for gen in generation:
                 f.write(' | ')
                 f.write(mon)
                 f.write('\n')
+        f.close()
 
     ## Print statistics to file
     f1 = open(foutTemplate + '_' + gen + '_usage_statistics' + '.txt','w',encoding='utf-8', errors='ignore')
@@ -1519,6 +1539,7 @@ for gen in generation:
                 f.write(' | ')
                 f.write(mon)
                 f.write('\n')
+        f.close()
 
     ## Print builder to file by gen
     if analyzeTeams and sortBuilder:

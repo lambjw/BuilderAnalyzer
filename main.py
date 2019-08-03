@@ -14,7 +14,7 @@ import operator
 ######## PARAMETERS FOR TUNING TO YOUR LIKING ########
 
 #### --- REPLACE WITH YOUR BUILDER --- ####
-fin = 'asta_linear_roro_gs_ud_builder.txt'
+fin = 'linear_ud_gs_v3.txt'
 
 ### DOWNLOAD LATEST POKEDEX
 downloadPokedex = False
@@ -41,11 +41,12 @@ showIVs = False
 showNicknames = True
 ignoreSetsFraction = [1/8,1/16,1/32,0] 
 showStatisticsInSets = True
+printArchetypeLabel = True
 
 #### STATISTICS PARAMETERS
 maxCoreNum = 4
-usageWeight = 1.5
-importantItems = ['Choice Band']
+usageWeight = [1,1.5,1.5,1.5,2,2]
+importantItems = ['Choice Band','Choice Scarf','Choice Specs','Assault Vest','Rocky Helmet','Z']
 movePairSynergyThreshold = 1/6 # 1/6
 movePairInTripletSynergyThreshold = 1/6 # 1/6
 moveTripletSynergyThreshold = 1/6 # 1/6
@@ -54,9 +55,21 @@ moveProbInTripletThreshold = 0.1 # 0.15
 moveCountThreshold = 2 # 2
 sumMoveProbThreshold = 0.8 # 0.8
 sumMoveProbTripletThreshold = 0.8 # 0.6
-namingExclusionMoveThreshold = 1/4 * 0.15 # 0.1
-namingMinMoveProb = 1/4 * 0.80 # 0.9
+namingIgnoreCategoryNum = 2
+namingExclusionMoveThreshold = 1/4 * 0.25 # 0.1
+namingMinMoveProb = 1/4 * 0.8 # 0.9
 namingExclusionCatThreshold = 0.1
+natureEVmodifier = 120
+showMissingMonCores = False
+showMissingSetCores = False
+maxMissingMonCores = 2
+maxMissingSetCores = 2
+analyzeArchetypes = True
+exponent = 1.6
+gammaSpectral = 2
+numArchetypes = 8
+gammaArchetypes = 0.7
+
 
 #### COMBINED BUILDER PARAMETERS
 sortBuilder = True
@@ -64,6 +77,7 @@ sortBuilder = True
 sortGenByFrequency = -1
 sortGenByAlphabetical = 0
 ### --- FOLDER SORTING WITHIN GENERATION
+sortFolderByArchetype = -1
 sortFolderByFrequency = -1
 sortFolderByAlphabetical = 0
 ### --- TEAM SORTING WITHIN FOLDER
@@ -78,6 +92,11 @@ sortMonsByColor = False
 gamma = 1
 
 ######## PARAMETERS END HERE ########
+
+if analyzeArchetypes:
+    import numpy as np
+    import skfuzzy as fuzz
+    import matplotlib.pyplot as plt
 
 if downloadPokedex:
     print('Beginning pokedex download...')
@@ -390,6 +409,17 @@ def ExtractSet(setText,inputFormatDense,pokedexStr,itemsStr,abilitiesStr,movesSt
             posItem1 = setText.find(' @ ',postemp) + 3
             posItem2 = setText.find('\n',posItem1) - 2
             setDict['Item'] = setText[posItem1:posItem2]
+
+    indexMegaStone = setDict['Item'].find('ite')
+    if indexMegaStone > -1:
+        if indexMegaStone == len(setDict['Item']) - 3:
+            if setDict['Item'] != 'Eviolite':
+                indexMega = setDict['Name'].find('-Mega')
+                if indexMega == -1:
+                    setDict['Name'] = setDict['Name'] + '-Mega'
+        elif indexMegaStone == len(setDict['Item']) - 5:
+            if setDict['Name'] == 'Charizard':
+                setDict['Name'] = 'Charizard-Mega-' + setDict['Item'][-1]           
     return setDict
 
 def PrintSet(setDict,moveFrequency,showShiny,showIVs,showNicknames,sortMovesByAlphabetical,sortMovesByFrequency):
@@ -714,6 +744,17 @@ for gen in generation:
                     leadList[setList[teamList[n]['Index'][0]]['Name']] += inc
                 else:
                     leadList[setList[teamList[n]['Index'][0]]['Name']] = inc
+
+        # NEW FEATURE Find antisynergistic pairs and triplets
+        if showMissingMonCores:
+            for p in range(1,maxMissingMonCores):
+                core = combinations([c[0] for c in coreList[0]],p+1)
+                for c in core:
+                    cSort = tuple(sorted(c))
+                    if cSort not in coreList[p]:
+                        coreList[p][cSort] = 0
+
+
         for p in range(6):
             coreCount[p] = sum(coreList[p].values())
             multiplicity[p] = math.factorial(p+1)
@@ -721,14 +762,20 @@ for gen in generation:
         mpmiList = [dict(),dict(),dict(),dict(),dict(),dict()]
         for p in range(6):
             for c in coreList[p]:
-                mpmiList[p][c] = 0;
-                for q in range(p+1):
-                    for d in combinations(c,q+1):
-                        if coreList[q][d] != 0:
-                            # sign convention: positive if synergetic
-                            mpmiList[p][c] += (-1)**(q) * (-math.log(coreList[q][d]/coreCount[q]/multiplicity[q],2))
-                        else:
-                            mpmiList[p][c] = 0
+                if coreList[p][c] != 0:
+                    mpmiList[p][c] = 0;
+                    for q in range(p+1):
+                        for d in combinations(c,q+1):
+                            dSort = tuple(sorted(d))
+                            if coreList[q][dSort] != 0:
+                                # sign convention: positive if synergetic
+                                mpmiList[p][c] += (-1)**(q) * (-math.log(coreList[q][dSort]/coreCount[q]/multiplicity[q],2))
+                            else:
+                                mpmiList[p][c] = 0
+                else: # NEW FEATURE
+                    mpmiList[p][c] = -100
+                    for m in c:
+                        mpmiList[p][c] += -math.log(coreList[0][(m,)]/coreCount[0]/multiplicity[0],2)
         ## Sort builder
         
         if sortBuilder:
@@ -804,7 +851,33 @@ for gen in generation:
     ## Categorize sets for synergy analysis
     # Aggregate by Item or EVs, then store moves
     categoryDict = dict()
-
+    natureDict = {
+        'Hardy': [0,0,0,0,0,0],
+        'Lonely': [0,1,-1,0,0,0],
+        'Brave': [0,1,0,0,0,-1],
+        'Adamant': [0,1,0,-1,0,0],
+        'Naughty': [0,1,0,0,-1,0],
+        'Bold': [0,-1,1,0,0,0],
+        'Docile': [0,0,0,0,0,0],
+        'Relaxed': [0,0,1,0,0,-1],
+        'Impish': [0,0,1,-1,0,0],
+        'Lax': [0,0,1,0,-1,0],
+        'Timid': [0,-1,0,0,0,1],
+        'Hasty': [0,0,-1,0,0,1],
+        'Serious': [0,0,0,0,0,0],
+        'Jolly': [0,0,0,-1,0,1],
+        'Naive': [0,0,0,0,-1,1],
+        'Modest': [0,-1,0,1,0,0],
+        'Mild': [0,0,-1,1,0,0],
+        'Quiet': [0,0,0,1,0,-1],
+        'Bashful': [0,0,0,0,0,0],
+        'Rash': [0,0,0,1,-1,0],
+        'Calm': [0,-1,0,0,1,0],
+        'Gentle': [0,0,-1,0,1,0],
+        'Sassy': [0,0,0,0,1,-1],
+        'Careful': [0,0,0,-1,1,0],
+        'Quirky': [0,0,0,0,0,0]
+    }
     for n in range(setListLen):
         currentSetDict = setListNameSorted[n]
         if currentSetDict['Name'] not in categoryDict:
@@ -813,10 +886,17 @@ for gen in generation:
             categoryDict[currentSetDict['Name']]['Count'] = 0
         categoryDict[currentSetDict['Name']]['Count'] += 1
         # define first category
-        if currentSetDict['Item'] in importantItems:
+        if currentSetDict['Item'] in importantItems or (currentSetDict['Item'].find('Z') == len(currentSetDict['Item'])-1 and len(currentSetDict['Item']) > 0 and 'Z' in importantItems):
             category1 = currentSetDict['Item']
         else:
             currentEVs = copy.deepcopy(currentSetDict['EVs'])
+            if currentSetDict['Nature'] != '':
+                natureModifier = natureDict[currentSetDict['Nature']]
+                if max(natureModifier) == 1:
+                    increaseStat = natureModifier.index(1)
+                    decreaseStat = natureModifier.index(-1)
+                    currentEVs[increaseStat] += natureEVmodifier
+                    currentEVs[decreaseStat] -= natureEVmodifier
             highestEVIndex1 = currentEVs.index(max(currentEVs))
             tempEVs = copy.deepcopy(currentEVs)
             del tempEVs[highestEVIndex1]
@@ -964,7 +1044,7 @@ for gen in generation:
             if cat == 'Count':
                 continue
             fullCat = (name,cat)
-            if cat in importantItems:
+            if cat in importantItems  or (isinstance(cat,str) and (cat.find('Z') == len(cat)-1 and len(cat) > 0 and 'Z' in importantItems)):
                 cat = cat.replace(' Berry', '')
                 cat = cat.replace('Choice ', '')
                 cat = cat.replace('Assault Vest', 'AV')
@@ -987,30 +1067,37 @@ for gen in generation:
                     diffTaken = True
                 descriptiveMove = ''
                 if diffTaken:
-                    if differenceSet: #len(categoryDict[name]) > 2: # account for Count
-                        maxMove = max(differenceSet,key=lambda x:movesCutDict[cat][x])
-                        if movesCutDict[cat][maxMove] > namingMinMoveProb:
-                            descriptiveMove = shortenMove(maxMove)
-                    if (not differenceSet) or (differenceSet and (movesCutDict[cat][maxMove] <= namingMinMoveProb)):
-                        # try to find move that intersects with at most one other category
-                        categorySet = set(categoryDict[name].keys())
-                        categorySet.remove('Count')
-                        categorySet.remove(cat)
-                        categoryCombs1 = combinations(categorySet,len(categorySet)-1)
-                        selectedMoves = dict()
-                        diffTaken = False
-                        for c in categoryCombs1:
-                            differenceSet = set(movesCutDict[cat].keys())
-                            for dat in c:
-                                differenceSet = differenceSet.difference(set(movesCutDict[dat].keys()))
-                                diffTaken = True
-                            if diffTaken and differenceSet:
-                                maxMove = max(differenceSet,key=lambda x:movesCutDict[cat][x])
-                                selectedMoves[maxMove] = movesCutDict[cat][maxMove]
-                        if selectedMoves:
-                            maxMove1 = max(selectedMoves,key=lambda x:movesCutDict[cat][x])
-                            if movesCutDict[cat][maxMove1] > namingMinMoveProb:
-                                descriptiveMove = shortenMove(maxMove1)
+                    ignoreNum = 1
+                    while ignoreNum <= namingIgnoreCategoryNum and descriptiveMove == '':
+                        if differenceSet: #len(categoryDict[name]) > 2: # account for Count
+                            maxMove = max(differenceSet,key=lambda x:movesCutDict[cat][x])
+                            if movesCutDict[cat][maxMove] > namingMinMoveProb:
+                                descriptiveMove = shortenMove(maxMove)
+                        if (not differenceSet) or (differenceSet and (movesCutDict[cat][maxMove] <= namingMinMoveProb)):
+                            # try to find move that intersects with at most one other category
+                            categorySet = set(categoryDict[name].keys())
+                            categorySet.remove('Count')
+                            categorySet.remove(cat)
+                            if ignoreNum > len(categorySet) - 1:
+                                break
+                            categoryCombs1 = combinations(categorySet,len(categorySet)-ignoreNum)
+                            selectedMoves = dict()
+                            diffTaken = False
+                            for c in categoryCombs1:
+                                differenceSet = set(movesCutDict[cat].keys())
+                                for dat in c:
+                                    if categoryDict[name][dat]['Count'] / categoryDict[name]['Count'] < namingExclusionCatThreshold:
+                                        continue
+                                    differenceSet = differenceSet.difference(set(movesCutDict[dat].keys()))
+                                    diffTaken = True
+                                if diffTaken and differenceSet:
+                                    maxMove = max(differenceSet,key=lambda x:movesCutDict[cat][x])
+                                    selectedMoves[maxMove] = movesCutDict[cat][maxMove]
+                            if selectedMoves:
+                                maxMove1 = max(selectedMoves,key=lambda x:movesCutDict[cat][x])
+                                if movesCutDict[cat][maxMove1] > namingMinMoveProb:
+                                    descriptiveMove = shortenMove(maxMove1)
+                        ignoreNum += 1
 
                 if 'SplitMoves' in categoryDict[name][cat]:
                     for m in range(len(categoryDict[name][cat]['SplitMoves'])):
@@ -1045,10 +1132,17 @@ for gen in generation:
         monIndex = 0
         for s in setList[teamList[n]['Index'][0]:teamList[n]['Index'][1]]:
             category = [s['Name']]
-            if s['Item'] in importantItems:
+            if s['Item'] in importantItems or (s['Item'].find('Z') == len(s['Item'])-1 and len(s['Item']) > 0 and 'Z' in importantItems):
                 category.append(s['Item'])
             else:
                 currentEVs = copy.deepcopy(s['EVs'])
+                if s['Nature'] != '':
+                    natureModifier = natureDict[s['Nature']]
+                    if max(natureModifier) == 1:
+                        increaseStat = natureModifier.index(1)
+                        decreaseStat = natureModifier.index(-1)
+                        currentEVs[increaseStat] += natureEVmodifier
+                        currentEVs[decreaseStat] -= natureEVmodifier
                 highestEVIndex1 = currentEVs.index(max(currentEVs))
                 tempEVs = copy.deepcopy(currentEVs)
                 del tempEVs[highestEVIndex1]
@@ -1090,6 +1184,10 @@ for gen in generation:
                     catLeadList[tuple(category)] = inc
             monIndex += 1
             categoryList.append(tuple(category))
+        if 'Categories' not in teamList[n]:
+            teamList[n]['Categories'] = [tuple(category)]
+        else:
+            teamList[n]['Categories'].append(tuple(category))
 
         for p in range(6):
             catCore = combinations(categoryList,p+1)
@@ -1099,6 +1197,18 @@ for gen in generation:
                     catCoreList[p][cSort] += inc
                 else:
                     catCoreList[p][cSort] = inc
+
+    # NEW FEATURE Find antisynergistic pairs and triplets
+    if showMissingSetCores:
+        for p in range(1,maxMissingMonCores):
+            catCore = combinations([c[0] for c in catCoreList[0]],p+1)
+            for c in catCore:
+                cSort = tuple(sorted(c, key=lambda x:x[0]))
+                monSet = set([cat[0] for cat in cSort])
+                if len(monSet) < p+1:
+                    continue
+                if cSort not in catCoreList[p]:
+                    catCoreList[p][cSort] = 0
         
 
     catCoreCount = [0]*6
@@ -1110,15 +1220,75 @@ for gen in generation:
     mpmiCatList = [dict(),dict(),dict(),dict(),dict(),dict()]
     for p in range(6):
         for c in catCoreList[p]:
-            mpmiCatList[p][c] = 0;
-            for q in range(p+1):
-                for d in combinations(c,q+1):
-                    if catCoreList[q][d] != 0:
-                        # sign convention: positive if synergetic
-                        mpmiCatList[p][c] += (-1)**(q) * (-math.log(catCoreList[q][d]/catCoreCount[q]/catMultiplicity[q],2))
-                    else:
-                        mpmiCatList[p][c] = 0
-        
+            if catCoreList[p][c] != 0:
+                mpmiCatList[p][c] = 0
+                for q in range(p+1):
+                    for d in combinations(c,q+1):
+                        dSort = tuple(sorted(d, key=lambda x:x[0]))
+                        if catCoreList[q][dSort] != 0:
+                            # sign convention: positive if synergetic
+                            mpmiCatList[p][c] += (-1)**(q) * (-math.log(catCoreList[q][dSort]/catCoreCount[q]/catMultiplicity[q],2))
+                        else: 
+                            mpmiCatList[p][c] = 0
+            else: # NEW FEATURE
+                mpmiCatList[p][c] = -100
+                for m in c:
+                    mpmiCatList[p][c] += -math.log(catCoreList[0][(m,)]/catCoreCount[0]/catMultiplicity[0],2)
+            
+
+    ## Perform spectral clustering
+
+    catIndivList = [c[0] for c in catCoreList[0].keys()]
+    numCats = len(catIndivList)
+    W = np.zeros((numCats,numCats))
+    D = np.zeros((numCats,numCats))
+    Dinv = np.zeros((numCats,numCats))
+    DinvRoot = np.zeros((numCats,numCats))
+    for ii in range(numCats):
+        for jj in range(numCats):
+            core = tuple(sorted([catIndivList[ii],catIndivList[jj]],key=lambda x:x[0]))
+            if core in catCoreList[1]:
+                # W[ii,jj] = 2.0**catCoreList[1][core] 
+                # W[ii,jj] = 2.0**mpmiCatList[1][core] * catCoreList[1][core]**gammaSpectral
+                W[ii,jj] = catCoreList[1][core] ** gammaSpectral
+                # W[ii,jj] = 2.0**mpmiCatList[1][core]
+    for ii in range(numCats):
+        D[ii,ii] = np.sum(W[ii,:])
+        Dinv[ii,ii] = 1/np.sum(W[ii,:])
+        DinvRoot[ii,ii] = 1/math.sqrt(np.sum(W[ii,:]))
+    L = D - W # unnormalized laplacian
+    Lsym = DinvRoot @ L @ DinvRoot
+    Lrw = np.matmul(Dinv,L)
+    clusterMethod = 2
+    if clusterMethod == 0:
+        eigenval,v = np.linalg.eigh(L)
+    elif clusterMethod == 1:
+        eigenval,v = np.linalg.eigh(Lrw)
+    elif clusterMethod == 2:
+        eigenval,v = np.linalg.eigh(Lsym)
+
+    fpcs = []
+    for nCenters in range(2,15):
+        vk = np.zeros((numCats,numCats))
+        if clusterMethod == 2:
+            for ii in range(numCats):
+                vk[ii,0:nCenters] = v[ii,0:nCenters] / math.sqrt(sum(v[ii,0:nCenters]**2))
+        else:
+            vk = v
+        cntr, u, u0, d, jm, p, fpc = fuzz.cluster.cmeans(vk[:,0:nCenters].transpose(), nCenters, exponent, error=0.005, maxiter=1000, init=None)
+        fpcs.append(fpc)
+    fig, ax = plt.subplots()
+    ax.plot(np.r_[2:15], fpcs)
+    ax.set_xlabel("Number of centers")
+    ax.set_ylabel("Fuzzy partition coefficient")
+    plt.show()
+    vk = np.zeros((numCats,numArchetypes))
+    if clusterMethod == 2:
+        for ii in range(numCats):
+            vk[ii,:] = v[ii,0:numArchetypes] / math.sqrt(sum(v[ii,0:numArchetypes]**2))
+    else:
+        vk = v[:,0:numArchetypes]
+    cntr, pMat, pMat0, d, jm, p, fpc = fuzz.cluster.cmeans(vk.transpose(), numArchetypes, exponent, error=0.005, maxiter=1000, init=None)
 
     ## Aggregates sets by EV equivalence
 
@@ -1384,7 +1554,10 @@ for gen in generation:
             f.write('Built from ' + foutTemplate + '.txt\n')
             f.write('-'*50 + '\n')
             f.write('Parameters:\n')
-            f.write('usageWeight: ' + '{:.3f}'.format(usageWeight) + '\n')
+            for w in usageWeight[0:-1]:
+                f.write('{:.3f}'.format(w))
+                f.write(', ')
+            f.write('{:.3f}'.format(usageWeight[-1]) + '\n')
             f.write('importantItems: ')
             for i in importantItems[0:-1]:
                 f.write(i)
@@ -1398,9 +1571,15 @@ for gen in generation:
             f.write('moveCountThreshold: ' + str(moveCountThreshold) + '\n')
             f.write('sumMoveProbThreshold: ' + '{:.3f}'.format(sumMoveProbThreshold) + '\n')
             f.write('sumMoveProbTripletThreshold: ' + '{:.3f}'.format(sumMoveProbTripletThreshold) + '\n')
+            f.write('namingIgnoreCategoryNum: ' + str(namingIgnoreCategoryNum) + '\n')
             f.write('namingExclusionMoveThreshold: 1/4 * ' + '{:.3f}'.format(namingExclusionMoveThreshold*4) + '\n')
             f.write('namingMinMoveProb: 1/4 * ' + '{:.3f}'.format(namingMinMoveProb*4) + '\n')
             f.write('namingExclusionCatThreshold: ' + '{:.3f}'.format(namingExclusionCatThreshold) + '\n')
+            f.write('natureEVmodifier: ' + str(natureEVmodifier) + '\n')
+            f.write('showMissingMonCores: ' + str(showMissingMonCores) + '\n')
+            f.write('showMissingSetCores: ' + str(showMissingSetCores) + '\n')
+            f.write('maxMissingMonCores: ' + str(maxMissingMonCores) + '\n')
+            f.write('maxMissingSetCores: ' + str(maxMissingMonCores) + '\n')
             f.write('-'*50 + '\n\n')
 
             if f == f1 or f == f2:
@@ -1421,7 +1600,7 @@ for gen in generation:
                     if f == f1:
                         coreFrequencySorted = [(c,catCoreList[p][c]) for c in sorted(catCoreList[p], key=lambda x:catCoreList[p][x], reverse=True)]
                     elif f == f2:
-                        coreFrequencySorted = [(c,catCoreList[p][c]) for c in sorted(catCoreList[p], key=lambda x:catCoreList[p][x]**usageWeight*mpmiCatList[p][x], reverse=True)]
+                        coreFrequencySorted = [(c,catCoreList[p][c]) for c in sorted(catCoreList[p], key=lambda x:catCoreList[p][x]**usageWeight[p]*mpmiCatList[p][x], reverse=True)]
                     if p == 0:
                         f.write('Pokemon Arranged by Frequency\n')
                         f.write(' Counts | Freq (%) | Pokemon\n')
@@ -1474,6 +1653,120 @@ for gen in generation:
                 f.write('\n')
         f.close()
 
+    ## Print team set statistics to csv
+    f1 = open(foutTemplate + '_' + gen + '_usage_sets_statistics' + '.csv','w',encoding='utf-8', errors='ignore')
+    f2 = open(foutTemplate + '_' + gen + '_synergy_sets_statistics' + '.csv','w',encoding='utf-8', errors='ignore')
+    f3 = open(foutTemplate + '_' + gen + '_statistics_legend' + '.csv','w',encoding='utf-8', errors='ignore')
+    totalMons = sum(list(monFrequency.values()))
+    if len(setList) > 0:
+        maxNameLen = max([len(categoryNics[c]) for c in categoryNics])
+    else:
+        maxNameLen = 18
+
+    for f in [f1,f2,f3]:
+        if analyzeTeams:
+            f.write('Built from ' + foutTemplate + '.txt\n')
+            f.write('\n')
+            f.write('Parameters,\n')
+            for w in usageWeight[0:-1]:
+                f.write('{:.3f}'.format(w))
+                f.write(',')
+            f.write('{:.3f}'.format(usageWeight[-1]) + '\n')
+            f.write('importantItems,')
+            for i in importantItems[0:-1]:
+                f.write(i)
+                f.write(',')
+            f.write(importantItems[-1] + '\n')
+            f.write('movePairSynergyThreshold,' + '{:.3f}'.format(movePairSynergyThreshold) + '\n')
+            f.write('movePairInTripletSynergyThreshold,' + '{:.3f}'.format(movePairInTripletSynergyThreshold) + '\n')
+            f.write('moveTripletSynergyThreshold,' + '{:.3f}'.format(moveTripletSynergyThreshold) + '\n')
+            f.write('moveProbThreshold,' + '{:.3f}'.format(moveProbThreshold) + '\n')
+            f.write('moveProbInTripletThreshold,' + '{:.3f}'.format(moveProbInTripletThreshold) + '\n')
+            f.write('moveCountThreshold,' + str(moveCountThreshold) + '\n')
+            f.write('sumMoveProbThreshold,' + '{:.3f}'.format(sumMoveProbThreshold) + '\n')
+            f.write('sumMoveProbTripletThreshold,' + '{:.3f}'.format(sumMoveProbTripletThreshold) + '\n')
+            f.write('namingIgnoreCategoryNum,' + str(namingIgnoreCategoryNum) + '\n')
+            f.write('namingExclusionMoveThreshold,1/4*' + '{:.3f}'.format(namingExclusionMoveThreshold*4) + '\n')
+            f.write('namingMinMoveProb,1/4*' + '{:.3f}'.format(namingMinMoveProb*4) + '\n')
+            f.write('namingExclusionCatThreshold,' + '{:.3f}'.format(namingExclusionCatThreshold) + '\n')
+            f.write('natureEVmodifier,' + str(natureEVmodifier) + '\n')
+            f.write('showMissingMonCores,' + str(showMissingMonCores) + '\n')
+            f.write('showMissingSetCores,' + str(showMissingSetCores) + '\n')
+            f.write('maxMissingMonCores,' + str(maxMissingMonCores) + '\n')
+            f.write('maxMissingSetCores,' + str(maxMissingMonCores) + '\n')
+            f.write('\n\n')
+
+            if f == f1 or f == f2:
+                if not teamPreview:
+                    leadFrequencySorted = [(l,catLeadList[l]) for l in sorted(catLeadList, key=lambda x:catLeadList[x], reverse=True)]
+                    f.write('Team Lead Arranged by Frequency\n')
+                    f.write('Counts,Freq (%),Lead\n')
+                    for (lead,freq) in leadFrequencySorted:
+                        f.write(str(freq))
+                        f.write(',')
+                        percentStr = "{:.3f}".format(freq/len(teamList)*100)
+                        f.write(percentStr)
+                        f.write(',,')
+                        f.write(categoryNics[lead])
+                        f.write('\n')
+                    f.write('\n')
+                for p in range(maxCoreNum):
+                    if f == f1:
+                        coreFrequencySorted = [(c,catCoreList[p][c]) for c in sorted(catCoreList[p], key=lambda x:catCoreList[p][x], reverse=True)]
+                    elif f == f2:
+                        coreFrequencySorted = [(c,catCoreList[p][c]) for c in sorted(catCoreList[p], key=lambda x:(catCoreList[p][x]+0.001)**usageWeight[p]*mpmiCatList[p][x], reverse=True)]
+                    if p == 0:
+                        f.write('Pokemon Arranged by Frequency\n')
+                        f.write('Counts,Freq (%),,Pokemon\n')
+                    else:
+                        f.write(str(p+1) + '-Cores Arranged by Frequency\n')
+                        f.write('Counts,Freq (%),Synergy,Cores\n')
+                    for (core,freq) in coreFrequencySorted:
+                        if freq == 0 and not showMissingSetCores:
+                            continue
+                        f.write(str(freq))
+                        f.write(',')
+                        percentStr = "{:.3f}".format(freq/len(teamList)*100)
+                        f.write(percentStr)
+                        f.write(',')
+                        if p > 0:
+                            mpmiStr = "{:.2f}".format(mpmiCatList[p][core])
+                            f.write(mpmiStr)
+                        f.write(',')
+                        for q in range(p):
+                            f.write(categoryNics[core[q]])
+                            f.write(',')
+                        f.write(categoryNics[core[p]])
+                        f.write('\n')
+                    f.write('\n')
+            elif f == f3:
+                coreNameSorted = [(c,catCoreList[0][c]) for c in sorted(catCoreList[0], key=lambda x:x[0][0])]
+                f.write('Sets Legend in Alphabetical Order\n')
+                f.write('Counts,Freq (%),Pokemon\n')
+                for (core,freq) in coreNameSorted:
+                    if freq == 0:
+                        continue
+                    f.write(str(freq))
+                    f.write(',')
+                    percentStr = "{:.3f}".format(freq/len(teamList)*100)
+                    f.write(percentStr)
+                    f.write(',')
+                    f.write(categoryNics[core[0]])
+                    f.write('\n')
+        else: 
+            monFrequencySorted = [(mon,monFrequency[mon]) for mon in sorted(monFrequency, key=lambda x:monFrequency[x], reverse=True)]
+            f.write('Pokemon Arranged by Frequency\n')
+            f.write('Counts,Freq (%),Pokemon\n')
+            for (mon,freq) in monFrequencySorted:
+                f.write(str(freq))
+                f.write(',')
+                percentStr = "{:.3f}".format(freq/totalMons*100)
+                f.write(percentStr)
+                f.write(',')
+                f.write(mon)
+                f.write('\n')
+        f.close()
+
     ## Print statistics to file
     f1 = open(foutTemplate + '_' + gen + '_usage_statistics' + '.txt','w',encoding='utf-8', errors='ignore')
     f2 = open(foutTemplate + '_' + gen + '_synergy_statistics' + '.txt','w',encoding='utf-8', errors='ignore')
@@ -1502,7 +1795,7 @@ for gen in generation:
                 if f == f1:
                     coreFrequencySorted = [(c,coreList[p][c]) for c in sorted(coreList[p], key=lambda x:coreList[p][x], reverse=True)]
                 elif f == f2:
-                    coreFrequencySorted = [(c,coreList[p][c]) for c in sorted(coreList[p], key=lambda x:coreList[p][x]**usageWeight*mpmiList[p][x], reverse=True)]
+                    coreFrequencySorted = [(c,coreList[p][c]) for c in sorted(coreList[p], key=lambda x:coreList[p][x]**usageWeight[p]*mpmiList[p][x], reverse=True)]
                 if p == 0:
                     f.write('Pokemon Arranged by Frequency\n')
                     f.write(' Counts | Freq (%) | Pokemon\n')
@@ -1510,7 +1803,7 @@ for gen in generation:
                     f.write(str(p+1) + '-Cores Arranged by Frequency\n')
                     f.write(' Counts | Freq (%) | Synergy | Cores\n')
                 for (core,freq) in coreFrequencySorted:
-                    if freq == 0:
+                    if freq == 0 and not showMissingMonCores:
                         continue
                     f.write((7-len(str(freq)))*' ' + str(freq))
                     f.write(' | ')
@@ -1541,13 +1834,171 @@ for gen in generation:
                 f.write('\n')
         f.close()
 
+    ## Print archetype statistics to file
+    if analyzeArchetypes:
+        catCount = [(catCoreList[0][(catIndivList[x],)])**gammaArchetypes for x in range(np.shape(pMat)[1])]
+        catCount = np.tile(np.array(catCount),(numArchetypes,1))
+        archetypeStrength = np.sum(pMat*catCount,axis=1)
+        archetypeOrder = sorted(range(numArchetypes),key=lambda x:archetypeStrength[x],reverse=True)
+
+        f = open(foutTemplate + '_' + gen + '_archetype_statistics' + '.txt','w',encoding='utf-8', errors='ignore')
+        totalMons = sum(list(monFrequency.values()))
+        if len(setList) > 0:
+            maxNameLen = max([len(categoryNics[c]) for c in categoryNics])
+        else:
+            maxNameLen = 18
+
+        if analyzeTeams:
+            f.write('Built from ' + foutTemplate + '.txt\n')
+            f.write('-'*50 + '\n')
+            f.write('Parameters:\n')
+            for w in usageWeight[0:-1]:
+                f.write('{:.3f}'.format(w))
+                f.write(', ')
+            f.write('{:.3f}'.format(usageWeight[-1]) + '\n')
+            f.write('importantItems: ')
+            for i in importantItems[0:-1]:
+                f.write(i)
+                f.write(', ')
+            f.write(importantItems[-1] + '\n')
+            f.write('movePairSynergyThreshold: ' + '{:.3f}'.format(movePairSynergyThreshold) + '\n')
+            f.write('movePairInTripletSynergyThreshold: ' + '{:.3f}'.format(movePairInTripletSynergyThreshold) + '\n')
+            f.write('moveTripletSynergyThreshold: ' + '{:.3f}'.format(moveTripletSynergyThreshold) + '\n')
+            f.write('moveProbThreshold: ' + '{:.3f}'.format(moveProbThreshold) + '\n')
+            f.write('moveProbInTripletThreshold: ' + '{:.3f}'.format(moveProbInTripletThreshold) + '\n')
+            f.write('moveCountThreshold: ' + str(moveCountThreshold) + '\n')
+            f.write('sumMoveProbThreshold: ' + '{:.3f}'.format(sumMoveProbThreshold) + '\n')
+            f.write('sumMoveProbTripletThreshold: ' + '{:.3f}'.format(sumMoveProbTripletThreshold) + '\n')
+            f.write('namingIgnoreCategoryNum: ' + str(namingIgnoreCategoryNum) + '\n')
+            f.write('namingExclusionMoveThreshold: 1/4 * ' + '{:.3f}'.format(namingExclusionMoveThreshold*4) + '\n')
+            f.write('namingMinMoveProb: 1/4 * ' + '{:.3f}'.format(namingMinMoveProb*4) + '\n')
+            f.write('namingExclusionCatThreshold: ' + '{:.3f}'.format(namingExclusionCatThreshold) + '\n')
+            f.write('natureEVmodifier: ' + str(natureEVmodifier) + '\n')
+            f.write('showMissingMonCores: ' + str(showMissingMonCores) + '\n')
+            f.write('showMissingSetCores: ' + str(showMissingSetCores) + '\n')
+            f.write('maxMissingMonCores: ' + str(maxMissingMonCores) + '\n')
+            f.write('maxMissingSetCores: ' + str(maxMissingMonCores) + '\n')
+            f.write('analyzeArchetypes: ' + str(analyzeArchetypes) + '\n')
+            f.write('exponent: ' + '{:.3f}'.format(exponent) + '\n')
+            f.write('gammaSpectral: ' + '{:.3f}'.format(gammaSpectral) + '\n')
+            f.write('numArchetypes: ' + str(numArchetypes) + '\n')
+            f.write('gammaArchetypes: ' + '{:.3f}'.format(gammaArchetypes) + '\n')
+            f.write('-'*50 + '\n\n')
+            for ii in archetypeOrder:
+                f.write('Archetype ' + str(ii+1) + '\n')
+                f.write(' Counts | Freq (%) | Confidence | Pokemon\n')
+                catFrequencySorted = sorted(range(np.shape(pMat)[1]),key=lambda x:pMat[ii,x]*(catCoreList[0][(catIndivList[x],)])**gammaArchetypes,reverse=True)
+                for catIndex in catFrequencySorted:
+                    cat = catIndivList[catIndex]
+                    freq = catCoreList[0][(cat,)]
+                    if freq == 0:
+                        continue
+                    f.write((7-len(str(freq)))*' ' + str(freq))
+                    f.write(' | ')
+                    percentStr = "{:.3f}".format(freq/len(teamList)*100)
+                    f.write((8-len(percentStr))*' ' + percentStr)
+                    f.write(' | ')
+                    confStr = "{:.2f}".format(pMat[ii,catIndex])
+                    f.write((10-len(confStr))*' ' + confStr)
+                    f.write(' | ')
+                    f.write(' '*(maxNameLen-len(categoryNics[cat])) + categoryNics[cat])
+                    f.write('\n')
+                f.write('\n')
+        f.close()
+
+    ## Print archetype statistics to csv
+    if analyzeArchetypes:
+        f = open(foutTemplate + '_' + gen + '_archetype_statistics' + '.csv','w',encoding='utf-8', errors='ignore')
+        totalMons = sum(list(monFrequency.values()))
+        if len(setList) > 0:
+            maxNameLen = max([len(categoryNics[c]) for c in categoryNics])
+        else:
+            maxNameLen = 18
+
+        if analyzeTeams:
+            f.write('Built from ' + foutTemplate + '.txt\n')
+            f.write('\n')
+            f.write('Parameters,\n')
+            for w in usageWeight[0:-1]:
+                f.write('{:.3f}'.format(w))
+                f.write(',')
+            f.write('{:.3f}'.format(usageWeight[-1]) + '\n')
+            f.write('importantItems,')
+            for i in importantItems[0:-1]:
+                f.write(i)
+                f.write(',')
+            f.write(importantItems[-1] + '\n')
+            f.write('movePairSynergyThreshold,' + '{:.3f}'.format(movePairSynergyThreshold) + '\n')
+            f.write('movePairInTripletSynergyThreshold,' + '{:.3f}'.format(movePairInTripletSynergyThreshold) + '\n')
+            f.write('moveTripletSynergyThreshold,' + '{:.3f}'.format(moveTripletSynergyThreshold) + '\n')
+            f.write('moveProbThreshold,' + '{:.3f}'.format(moveProbThreshold) + '\n')
+            f.write('moveProbInTripletThreshold,' + '{:.3f}'.format(moveProbInTripletThreshold) + '\n')
+            f.write('moveCountThreshold,' + str(moveCountThreshold) + '\n')
+            f.write('sumMoveProbThreshold,' + '{:.3f}'.format(sumMoveProbThreshold) + '\n')
+            f.write('sumMoveProbTripletThreshold,' + '{:.3f}'.format(sumMoveProbTripletThreshold) + '\n')
+            f.write('namingIgnoreCategoryNum,' + str(namingIgnoreCategoryNum) + '\n')
+            f.write('namingExclusionMoveThreshold,1/4*' + '{:.3f}'.format(namingExclusionMoveThreshold*4) + '\n')
+            f.write('namingMinMoveProb,1/4*' + '{:.3f}'.format(namingMinMoveProb*4) + '\n')
+            f.write('namingExclusionCatThreshold,' + '{:.3f}'.format(namingExclusionCatThreshold) + '\n')
+            f.write('natureEVmodifier,' + str(natureEVmodifier) + '\n')
+            f.write('showMissingMonCores,' + str(showMissingMonCores) + '\n')
+            f.write('showMissingSetCores,' + str(showMissingSetCores) + '\n')
+            f.write('maxMissingMonCores,' + str(maxMissingMonCores) + '\n')
+            f.write('maxMissingSetCores,' + str(maxMissingMonCores) + '\n')
+            f.write('showMissingMonCores,' + str(showMissingMonCores) + '\n')
+            f.write('showMissingSetCores,' + str(showMissingSetCores) + '\n')
+            f.write('maxMissingMonCores,' + str(maxMissingMonCores) + '\n')
+            f.write('maxMissingSetCores,' + str(maxMissingMonCores) + '\n')
+            f.write('analyzeArchetypes,' + str(analyzeArchetypes) + '\n')
+            f.write('exponent,' + '{:.3f}'.format(exponent) + '\n')
+            f.write('gammaSpectral,' + '{:.3f}'.format(gammaSpectral) + '\n')
+            f.write('numArchetypes,' + str(numArchetypes) + '\n')
+            f.write('gammaArchetypes,' + '{:.3f}'.format(gammaArchetypes) + '\n')
+            f.write('\n\n')
+
+            for ii in archetypeOrder:
+                f.write('Archetype ' + str(ii+1) + '\n')
+                f.write('Counts,Freq (%),Confidence,Pokemon\n')
+                catFrequencySorted = sorted(range(np.shape(pMat)[1]),key=lambda x:pMat[ii,x]*(catCoreList[0][(catIndivList[x],)])**gammaArchetypes,reverse=True)
+                for catIndex in catFrequencySorted:
+                    cat = catIndivList[catIndex]
+                    freq = catCoreList[0][(cat,)]
+                    if freq == 0:
+                        continue
+                    f.write(str(freq))
+                    f.write(',')
+                    percentStr = "{:.3f}".format(freq/len(teamList)*100)
+                    f.write(percentStr)
+                    f.write(',')
+                    confStr = "{:.2f}".format(pMat[ii,catIndex])
+                    f.write(confStr)
+                    f.write(',')
+                    f.write(categoryNics[cat])
+                    f.write('\n')
+                f.write('\n')
+        f.close()
+
     ## Print builder to file by gen
     if analyzeTeams and sortBuilder:
         f = open(foutTemplate + '_' + gen + '_sorted_builder' + '.txt','w',encoding='utf-8', errors='ignore')
         sortTeamsByLeadFrequency = sortTeamsByLeadFrequencyTeamPreview if teamPreview else sortTeamsByLeadFrequencyNoTeamPreview
+        if analyzeArchetypes:
+            catIndivDictInv = {v: k for k, v in enumerate(catIndivList)}
+            def FindArchetype(x):
+                totalDist = [0]*numArchetypes
+                for c in x['Categories']:
+                    if c not in catIndivDictInv:
+                        continue
+                    for n in range(numArchetypes):
+                        totalDist[n] += (sum((cntr[:,n].transpose()-vk[catIndivDictInv[c],:])**2)) 
+                return totalDist.index(min(totalDist))
         ## Define sort key
         def SortKey(x):
             keyList = list()
+            if analyzeArchetypes and sortFolderByArchetype != 0:
+                chosenArchetype = FindArchetype(x)
+                keyList.append(-sortFolderByArchetype*archetypeOrder[chosenArchetype])
+
             if sortFolderByFrequency != 0 or sortFolderByAlphabetical != 0:
                 if sortFolderByFrequency != 0:
                     keyList.append(sortFolderByFrequency*folderCount[x['Folder']])
@@ -1573,12 +2024,16 @@ for gen in generation:
             if teamList[n]['Anomalies'] > anomalyThreshold:
                 continue
             f.write('=== [' + gen + '] ')
+            if analyzeArchetypes and printArchetypeLabel:
+                chosenArchetype = FindArchetype(teamList[n])
+                f.write('Archetype ' + str(chosenArchetype) + ' ')
             f.write(teamList[n]['Name'])
             f.write(' ===\n\n')
             for i in range(teamList[n]['Index'][0],teamList[n]['Index'][1]):
                 f.write(PrintSet(setList[i],moveFrequency,True,True,True,sortMovesByAlphabetical,sortMovesByFrequency))
                 f.write('\n')
-            f.write('\n')          
+            f.write('\n')        
+        f.close()  
 
     ## Print sets to file
     for fracThreshold in ignoreSetsFraction:

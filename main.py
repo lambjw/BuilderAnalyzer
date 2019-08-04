@@ -43,33 +43,34 @@ ignoreSetsFraction = [1/8,1/16,1/32,0]
 showStatisticsInSets = True
 printArchetypeLabel = True
 
-#### STATISTICS PARAMETERS
+#### CORE STATISTICS PARAMETERS
 maxCoreNum = 4
 usageWeight = [1,1.5,1.5,1.5,2,2]
 importantItems = ['Choice Band','Choice Scarf','Choice Specs','Assault Vest','Rocky Helmet','Z']
-movePairSynergyThreshold = 1/6 # 1/6
-movePairInTripletSynergyThreshold = 1/6 # 1/6
-moveTripletSynergyThreshold = 1/6 # 1/6
-moveProbThreshold = 0.2 # 0.2
-moveProbInTripletThreshold = 0.1 # 0.15
-moveCountThreshold = 2 # 2
-sumMoveProbThreshold = 0.8 # 0.8
-sumMoveProbTripletThreshold = 0.8 # 0.6
+movePairSynergyThreshold = 1/6 
+movePairInTripletSynergyThreshold = 1/6 
+moveTripletSynergyThreshold = 1/6 
+moveProbThreshold = 0.2 
+moveProbInTripletThreshold = 0.1 
+moveCountThreshold = 2 
+sumMoveProbThreshold = 0.8 
+sumMoveProbTripletThreshold = 0.8 
 namingIgnoreCategoryNum = 2
-namingExclusionMoveThreshold = 1/4 * 0.25 # 0.1
-namingMinMoveProb = 1/4 * 0.8 # 0.9
+namingExclusionMoveThreshold = 1/4 * 0.25 
+namingMinMoveProb = 1/4 * 0.8 
 namingExclusionCatThreshold = 0.1
 natureEVmodifier = 120
 showMissingMonCores = False
 showMissingSetCores = False
 maxMissingMonCores = 2
 maxMissingSetCores = 2
+
+### ARCHETYPE STATISTICS PARAMETERS
 analyzeArchetypes = True
 exponent = 1.6
 gammaSpectral = 2
 numArchetypes = 8
 gammaArchetypes = 0.7
-
 
 #### COMBINED BUILDER PARAMETERS
 sortBuilder = True
@@ -77,10 +78,12 @@ sortBuilder = True
 sortGenByFrequency = -1
 sortGenByAlphabetical = 0
 ### --- FOLDER SORTING WITHIN GENERATION
-sortFolderByArchetype = -1
-sortFolderByFrequency = -1
+sortFolderByFrequency = 0 # -1
 sortFolderByAlphabetical = 0
 ### --- TEAM SORTING WITHIN FOLDER
+sortTeamsByArchetype = -1
+gammaTeamAssignment = 1/2
+metricArchetypes = 1
 sortTeamsByLeadFrequencyTeamPreview = 0
 sortTeamsByLeadFrequencyNoTeamPreview = -1
 sortTeamsByCore = -1
@@ -612,6 +615,7 @@ for gen in generation:
                                          'Anomalies': 0})
                         if line.find('/') > -1:
                             teamList[-1]['Folder'] = line[1+len(gen):line.find('/')+1]
+                            teamList[-1]['Name'] = line[line.find('/')+1:indexVert]
                             if teamList[-1]['Folder'] not in folderCount:
                                 folderCount[teamList[-1]['Folder']] = 1
                             else:
@@ -643,6 +647,7 @@ for gen in generation:
                                              'Anomalies': 0})
                             if line.find('/') > -1:
                                 teamList[-1]['Folder'] = line[7+len(gen):line.find('/')+1]
+                                teamList[-1]['Name'] = line[line.find('/')+1:-5]
                                 if teamList[-1]['Folder'] not in folderCount:
                                     folderCount[teamList[-1]['Folder']] = 1
                                 else:
@@ -1885,7 +1890,7 @@ for gen in generation:
             f.write('gammaArchetypes: ' + '{:.3f}'.format(gammaArchetypes) + '\n')
             f.write('-'*50 + '\n\n')
             for ii in archetypeOrder:
-                f.write('Archetype ' + str(ii+1) + '\n')
+                f.write('Archetype ' + str(archetypeOrder.index(ii)+1) + '\n')
                 f.write(' Counts | Freq (%) | Confidence | Pokemon\n')
                 catFrequencySorted = sorted(range(np.shape(pMat)[1]),key=lambda x:pMat[ii,x]*(catCoreList[0][(catIndivList[x],)])**gammaArchetypes,reverse=True)
                 for catIndex in catFrequencySorted:
@@ -1957,7 +1962,7 @@ for gen in generation:
             f.write('\n\n')
 
             for ii in archetypeOrder:
-                f.write('Archetype ' + str(ii+1) + '\n')
+                f.write('Archetype ' + str(archetypeOrder.index(ii)+1) + '\n')
                 f.write('Counts,Freq (%),Confidence,Pokemon\n')
                 catFrequencySorted = sorted(range(np.shape(pMat)[1]),key=lambda x:pMat[ii,x]*(catCoreList[0][(catIndivList[x],)])**gammaArchetypes,reverse=True)
                 for catIndex in catFrequencySorted:
@@ -1985,25 +1990,47 @@ for gen in generation:
         if analyzeArchetypes:
             catIndivDictInv = {v: k for k, v in enumerate(catIndivList)}
             def FindArchetype(x):
-                totalDist = [0]*numArchetypes
+                totalDeviation = [0]*numArchetypes
                 for c in x['Categories']:
                     if c not in catIndivDictInv:
-                        continue
-                    for n in range(numArchetypes):
-                        totalDist[n] += (sum((cntr[:,n].transpose()-vk[catIndivDictInv[c],:])**2)) 
-                return totalDist.index(min(totalDist))
+                        numCatFeatures = len(c)
+                        similarCatList = []
+                        weightsSimilarCatList = []
+                        for d in catIndivDictInv:
+                            if d[0:numCatFeatures] == c:
+                                similarCatList.append(d)
+                                weightsSimilarCatList.append(catCoreList[0][(d,)])
+                        weightsSimilarCatList = np.array(weightsSimilarCatList)/sum(weightsSimilarCatList)
+                        # Find average distance
+                        for n in range(numArchetypes):
+                            if metricArchetypes == 0: # using distance
+                                distList = [np.sqrt(sum((cntr[:,n].transpose()-vk[catIndivDictInv[d],:])**2)) for d in similarCatList]
+                                averageDist = np.sum(np.array(distList)*weightsSimilarCatList)
+                                totalDeviation[n] += averageDist**gammaTeamAssignment
+                            elif metricArchetypes == 1: # using prob values
+                                compProbList = [1 - pMat[n,catIndivDictInv[d]] for d in similarCatList] # complementary probability
+                                averageCompProb = np.sum(np.array(compProbList)*weightsSimilarCatList)
+                                totalDeviation[n] += averageCompProb**gammaTeamAssignment
+                    else:
+                        for n in range(numArchetypes):
+                            if metricArchetypes == 0:
+                                totalDeviation[n] += np.sqrt(sum((cntr[:,n].transpose()-vk[catIndivDictInv[c],:])**2))**gammaTeamAssignment
+                            elif metricArchetypes == 1:
+                                totalDeviation[n] += 1 - pMat[n,catIndivDictInv[c]]**gammaTeamAssignment
+                return totalDeviation.index(min(totalDeviation)), totalDeviation
         ## Define sort key
         def SortKey(x):
             keyList = list()
-            if analyzeArchetypes and sortFolderByArchetype != 0:
-                chosenArchetype = FindArchetype(x)
-                keyList.append(-sortFolderByArchetype*archetypeOrder[chosenArchetype])
-
             if sortFolderByFrequency != 0 or sortFolderByAlphabetical != 0:
                 if sortFolderByFrequency != 0:
                     keyList.append(sortFolderByFrequency*folderCount[x['Folder']])
                 keyList.append(OrdString(x['Folder'].casefold(),ToBool(sortFolderByAlphabetical)))
             
+            if analyzeArchetypes and sortTeamsByArchetype != 0:
+                chosenArchetype, dist = FindArchetype(x)
+                keyList.append(-sortTeamsByArchetype*archetypeOrder.index(chosenArchetype))
+                keyList.append(-sortTeamsByArchetype*dist)
+
             if sortTeamsByLeadFrequency != 0 or sortTeamsByCore != 0 or sortTeamsByAlphabetical != 0:
                 if sortTeamsByLeadFrequency != 0:
                     if teamPreview:
@@ -2024,9 +2051,10 @@ for gen in generation:
             if teamList[n]['Anomalies'] > anomalyThreshold:
                 continue
             f.write('=== [' + gen + '] ')
+            f.write(teamList[n]['Folder'])
             if analyzeArchetypes and printArchetypeLabel:
-                chosenArchetype = FindArchetype(teamList[n])
-                f.write('Archetype ' + str(chosenArchetype) + ' ')
+                chosenArchetype, dist = FindArchetype(teamList[n])
+                f.write('Archetype ' + str(archetypeOrder.index(chosenArchetype)+1) + ' ')
             f.write(teamList[n]['Name'])
             f.write(' ===\n\n')
             for i in range(teamList[n]['Index'][0],teamList[n]['Index'][1]):

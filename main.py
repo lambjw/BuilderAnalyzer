@@ -14,7 +14,7 @@ import operator
 ######## PARAMETERS FOR TUNING TO YOUR LIKING ########
 
 #### --- REPLACE WITH YOUR BUILDER --- ####
-fin = 'linear_ud_gs_v3.txt'
+fin = 'my_builder.txt'
 
 ### DOWNLOAD LATEST POKEDEX
 downloadPokedex = False
@@ -41,12 +41,13 @@ showIVs = False
 showNicknames = True
 ignoreSetsFraction = [1/8,1/16,1/32,0] 
 showStatisticsInSets = True
-printArchetypeLabel = True
+printArchetypeLabel = False
 
 #### CORE STATISTICS PARAMETERS
 maxCoreNum = 4
 usageWeight = [1,1.5,1.5,1.5,2,2]
 importantItems = ['Choice Band','Choice Scarf','Choice Specs','Assault Vest','Rocky Helmet','Z']
+natureEVmodifier = 120
 movePairSynergyThreshold = 1/6 
 movePairInTripletSynergyThreshold = 1/6 
 moveTripletSynergyThreshold = 1/6 
@@ -59,7 +60,6 @@ namingIgnoreCategoryNum = 2
 namingExclusionMoveThreshold = 1/4 * 0.25 
 namingMinMoveProb = 1/4 * 0.8 
 namingExclusionCatThreshold = 0.1
-natureEVmodifier = 120
 showMissingMonCores = False
 showMissingSetCores = False
 maxMissingMonCores = 2
@@ -69,6 +69,7 @@ maxMissingSetCores = 2
 analyzeArchetypes = True
 exponent = 1.6
 gammaSpectral = 2
+numArchetypesRange = 15
 numArchetypes = 8
 gammaArchetypes = 0.7
 
@@ -81,7 +82,7 @@ sortGenByAlphabetical = 0
 sortFolderByFrequency = 0 # -1
 sortFolderByAlphabetical = 0
 ### --- TEAM SORTING WITHIN FOLDER
-sortTeamsByArchetype = -1
+sortTeamsByArchetype = 0
 gammaTeamAssignment = 1/2
 metricArchetypes = 1
 sortTeamsByLeadFrequencyTeamPreview = 0
@@ -1238,62 +1239,62 @@ for gen in generation:
             else: # NEW FEATURE
                 mpmiCatList[p][c] = -100
                 for m in c:
-                    mpmiCatList[p][c] += -math.log(catCoreList[0][(m,)]/catCoreCount[0]/catMultiplicity[0],2)
+                    mpmiCatList[p][c] -= -math.log(catCoreList[0][(m,)]/catCoreCount[0]/catMultiplicity[0],2)
             
 
     ## Perform spectral clustering
+    if analyzeArchetypes:
+        catIndivList = [c[0] for c in catCoreList[0].keys()]
+        numCats = len(catIndivList)
+        W = np.zeros((numCats,numCats))
+        D = np.zeros((numCats,numCats))
+        Dinv = np.zeros((numCats,numCats))
+        DinvRoot = np.zeros((numCats,numCats))
+        for ii in range(numCats):
+            for jj in range(numCats):
+                core = tuple(sorted([catIndivList[ii],catIndivList[jj]],key=lambda x:x[0]))
+                if core in catCoreList[1]:
+                    # W[ii,jj] = 2.0**catCoreList[1][core] 
+                    # W[ii,jj] = 2.0**mpmiCatList[1][core] * catCoreList[1][core]**gammaSpectral
+                    W[ii,jj] = catCoreList[1][core] ** gammaSpectral
+                    # W[ii,jj] = 2.0**mpmiCatList[1][core]
+        for ii in range(numCats):
+            D[ii,ii] = np.sum(W[ii,:])
+            Dinv[ii,ii] = 1/np.sum(W[ii,:])
+            DinvRoot[ii,ii] = 1/math.sqrt(np.sum(W[ii,:]))
+        L = D - W # unnormalized laplacian
+        Lsym = DinvRoot @ L @ DinvRoot
+        Lrw = np.matmul(Dinv,L)
+        clusterMethod = 2
+        if clusterMethod == 0:
+            eigenval,v = np.linalg.eigh(L)
+        elif clusterMethod == 1:
+            eigenval,v = np.linalg.eigh(Lrw)
+        elif clusterMethod == 2:
+            eigenval,v = np.linalg.eigh(Lsym)
 
-    catIndivList = [c[0] for c in catCoreList[0].keys()]
-    numCats = len(catIndivList)
-    W = np.zeros((numCats,numCats))
-    D = np.zeros((numCats,numCats))
-    Dinv = np.zeros((numCats,numCats))
-    DinvRoot = np.zeros((numCats,numCats))
-    for ii in range(numCats):
-        for jj in range(numCats):
-            core = tuple(sorted([catIndivList[ii],catIndivList[jj]],key=lambda x:x[0]))
-            if core in catCoreList[1]:
-                # W[ii,jj] = 2.0**catCoreList[1][core] 
-                # W[ii,jj] = 2.0**mpmiCatList[1][core] * catCoreList[1][core]**gammaSpectral
-                W[ii,jj] = catCoreList[1][core] ** gammaSpectral
-                # W[ii,jj] = 2.0**mpmiCatList[1][core]
-    for ii in range(numCats):
-        D[ii,ii] = np.sum(W[ii,:])
-        Dinv[ii,ii] = 1/np.sum(W[ii,:])
-        DinvRoot[ii,ii] = 1/math.sqrt(np.sum(W[ii,:]))
-    L = D - W # unnormalized laplacian
-    Lsym = DinvRoot @ L @ DinvRoot
-    Lrw = np.matmul(Dinv,L)
-    clusterMethod = 2
-    if clusterMethod == 0:
-        eigenval,v = np.linalg.eigh(L)
-    elif clusterMethod == 1:
-        eigenval,v = np.linalg.eigh(Lrw)
-    elif clusterMethod == 2:
-        eigenval,v = np.linalg.eigh(Lsym)
-
-    fpcs = []
-    for nCenters in range(2,15):
-        vk = np.zeros((numCats,numCats))
+        fpcs = []
+        for nCenters in range(2,numArchetypesRange):
+            vk = np.zeros((numCats,numCats))
+            if clusterMethod == 2:
+                for ii in range(numCats):
+                    vk[ii,0:nCenters] = v[ii,0:nCenters] / math.sqrt(sum(v[ii,0:nCenters]**2))
+            else:
+                vk = v
+            cntr, u, u0, d, jm, p, fpc = fuzz.cluster.cmeans(vk[:,0:nCenters].transpose(), nCenters, exponent, error=0.005, maxiter=1000, init=None)
+            fpcs.append(fpc)
+        fig, ax = plt.subplots()
+        ax.plot(np.r_[2:15], fpcs)
+        ax.set_xlabel("Number of centers")
+        ax.set_ylabel("Fuzzy partition coefficient")
+        plt.show()
+        vk = np.zeros((numCats,numArchetypes))
         if clusterMethod == 2:
             for ii in range(numCats):
-                vk[ii,0:nCenters] = v[ii,0:nCenters] / math.sqrt(sum(v[ii,0:nCenters]**2))
+                vk[ii,:] = v[ii,0:numArchetypes] / math.sqrt(sum(v[ii,0:numArchetypes]**2))
         else:
-            vk = v
-        cntr, u, u0, d, jm, p, fpc = fuzz.cluster.cmeans(vk[:,0:nCenters].transpose(), nCenters, exponent, error=0.005, maxiter=1000, init=None)
-        fpcs.append(fpc)
-    fig, ax = plt.subplots()
-    ax.plot(np.r_[2:15], fpcs)
-    ax.set_xlabel("Number of centers")
-    ax.set_ylabel("Fuzzy partition coefficient")
-    plt.show()
-    vk = np.zeros((numCats,numArchetypes))
-    if clusterMethod == 2:
-        for ii in range(numCats):
-            vk[ii,:] = v[ii,0:numArchetypes] / math.sqrt(sum(v[ii,0:numArchetypes]**2))
-    else:
-        vk = v[:,0:numArchetypes]
-    cntr, pMat, pMat0, d, jm, p, fpc = fuzz.cluster.cmeans(vk.transpose(), numArchetypes, exponent, error=0.005, maxiter=1000, init=None)
+            vk = v[:,0:numArchetypes]
+        cntr, pMat, pMat0, d, jm, p, fpc = fuzz.cluster.cmeans(vk.transpose(), numArchetypes, exponent, error=0.005, maxiter=1000, init=None)
 
     ## Aggregates sets by EV equivalence
 

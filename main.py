@@ -83,7 +83,7 @@ sortFolderByFrequency = 0 # -1
 sortFolderByAlphabetical = 0
 ### --- TEAM SORTING WITHIN FOLDER
 sortTeamsByArchetype = 0
-gammaTeamAssignment = 1/2
+gammaTeamAssignment = 2
 metricArchetypes = 1
 sortTeamsByLeadFrequencyTeamPreview = 0
 sortTeamsByLeadFrequencyNoTeamPreview = -1
@@ -780,8 +780,9 @@ for gen in generation:
                                 mpmiList[p][c] = 0
                 else: # NEW FEATURE
                     mpmiList[p][c] = -100
-                    for m in c:
-                        mpmiList[p][c] += -math.log(coreList[0][(m,)]/coreCount[0]/multiplicity[0],2)
+                    if coreList[0][(m,)] > 0:
+                        for m in c:
+                            mpmiList[p][c] += -math.log(coreList[0][(m,)]/coreCount[0]/multiplicity[0],2)
         ## Sort builder
         
         if sortBuilder:

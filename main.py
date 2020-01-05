@@ -1551,7 +1551,7 @@ for gen in generation:
     f2 = open(foutTemplate + '_' + gen + '_synergy_sets_statistics' + '.txt','w',encoding='utf-8', errors='ignore')
     f3 = open(foutTemplate + '_' + gen + '_statistics_legend' + '.txt','w',encoding='utf-8', errors='ignore')
     totalMons = sum(list(monFrequency.values()))
-    if len(setList) > 0:
+    if len(setList) > 0 and len(categoryNics) > 0:
         maxNameLen = max([len(categoryNics[c]) for c in categoryNics])
     else:
         maxNameLen = 18
@@ -1665,7 +1665,7 @@ for gen in generation:
     f2 = open(foutTemplate + '_' + gen + '_synergy_sets_statistics' + '.csv','w',encoding='utf-8', errors='ignore')
     f3 = open(foutTemplate + '_' + gen + '_statistics_legend' + '.csv','w',encoding='utf-8', errors='ignore')
     totalMons = sum(list(monFrequency.values()))
-    if len(setList) > 0:
+    if len(setList) > 0 and len(categoryNics) > 0:
         maxNameLen = max([len(categoryNics[c]) for c in categoryNics])
     else:
         maxNameLen = 18
@@ -2076,7 +2076,7 @@ for gen in generation:
         f.write('-'*50 + '\n')
         f.write('Fraction of sets ignored: ')
         if fracThreshold == 0:
-            f.write('All')
+            f.write('None')
         else: 
             f.write("{:.2f}".format(fracThreshold*100) + '% or 1/' + str(int(1/fracThreshold)))
         f.write('\n')

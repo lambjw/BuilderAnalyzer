@@ -780,8 +780,8 @@ for gen in generation:
                                 mpmiList[p][c] = 0
                 else: # NEW FEATURE
                     mpmiList[p][c] = -100
-                    if coreList[0][(m,)] > 0:
-                        for m in c:
+                    for m in c:
+                        if coreList[0][(m,)] > 0:
                             mpmiList[p][c] += -math.log(coreList[0][(m,)]/coreCount[0]/multiplicity[0],2)
         ## Sort builder
         
